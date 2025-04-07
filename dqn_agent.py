@@ -109,16 +109,17 @@ class DQNAgent:
         self.total_steps += 1
         self._update_epsilon()
 
+        # ! CHECK IF makes sense
         if use_epsilon and np.random.rand() <= self.epsilon:
             # Explore: Choose a random *valid* action
             if valid_action_mask is not None:
                 valid_indices = np.where(valid_action_mask)[0]
                 if len(valid_indices) > 0:
-                    return random.choice(valid_indices)
+                    return random.choice(valid_indices) #? Choose a random valid action
                 else:
                     return 0 # No valid moves
             else:
-                return random.randrange(self.action_size) # Fallback
+                return random.randrange(self.action_size) # Fallback #!
 
         # Exploit: Choose the best *valid* action based on Q-values
         # Exploitation
@@ -129,6 +130,7 @@ class DQNAgent:
         grid_tensor = torch.from_numpy(grid_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device) # (1, C, H, W)
         pieces_tensor = torch.from_numpy(pieces_numpy).float().unsqueeze(0).to(self.device) # (1, P)
 
+        # ??? 
         self.model.eval()
         with torch.no_grad():
             act_values = self.model(grid_tensor, pieces_tensor) # Pass both inputs

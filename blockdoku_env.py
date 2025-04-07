@@ -2,8 +2,8 @@
 import pygame
 import numpy as np
 import settings as s
-from grid import Grid
-from game_state import GameState
+from game.grid import Grid
+from game.game_state import GameState
 from utils import decode_action, get_valid_action_mask # Import masking util
 
 class BlockdokuEnv:

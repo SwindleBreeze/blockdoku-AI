@@ -2,8 +2,8 @@
 import pygame
 import random
 import settings as s
-from piece import Piece
-from grid import Grid
+from game.piece import Piece
+from game.grid import Grid
 from typing import List, Optional, Tuple
 
 class GameState:
