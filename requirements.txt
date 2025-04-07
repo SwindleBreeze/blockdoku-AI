@@ -1,0 +1,4 @@
+pygame>=2.6.1
+torch>=2.5.0 # Or newer, check PyTorch website for install command
+numpy>=2.1
+tensorboard>=2.8.0 # For logging with PyTorch
