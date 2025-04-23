@@ -2,9 +2,9 @@
 import pygame
 import sys
 import settings as s
-from grid import Grid
-from game_state import GameState
-from piece import Piece # Import Piece class
+from game.grid import Grid
+from game.game_state import GameState
+from game.piece import Piece 
 
 def get_grid_coords_from_mouse(mouse_x, mouse_y):
     """Converts mouse screen coordinates to grid cell coordinates."""

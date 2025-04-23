@@ -4,7 +4,6 @@ import torch # Use torch
 import numpy as np
 import os
 import pygame # Need pygame for the quit event check
-
 import settings as s
 from blockdoku_env import BlockdokuEnv
 from dqn_agent import DQNAgent # PyTorch version
