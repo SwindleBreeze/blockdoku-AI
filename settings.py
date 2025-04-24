@@ -86,7 +86,7 @@ TARGET_UPDATE_FREQ = 5000 # Steps between updating target network
 LEARNING_STARTS = 5000 # Steps before starting training (fill buffer)
 
 # Training Settings
-NUM_EPISODES_TRAIN = 5000
+NUM_EPISODES_TRAIN = 2000
 # MAX_STEPS_PER_EPISODE = 1000 # Optional: Limit episode length
 
 # Visualization/Play Settings

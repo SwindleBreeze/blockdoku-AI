@@ -22,6 +22,27 @@ except ImportError:
     TENSORBOARD_AVAILABLE = False
 # ---------------------------------
 
+def save_model(agent, filename="BD", version=None, save_dir="saved_models"):
+    # Use provided directory or default from settings
+    model_dir = save_dir if save_dir else s.MODEL_SAVE_DIR
+    
+    # Ensure the directory exists
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    
+    # Build the filename
+    base_name = filename if filename else "blockdoku_dqn_torch"
+    if version is not None:
+        base_name = f"{base_name}_v{version}"
+    
+    model_path = os.path.join(model_dir, f"{base_name}.pth")
+    # Save the model
+    agent.save(model_path)
+    print(f"Model saved to {model_path}")
+    
+    return model_path
+
+
 def train():
     if not os.path.exists(s.MODEL_SAVE_DIR):
         os.makedirs(s.MODEL_SAVE_DIR)
@@ -55,12 +76,14 @@ def train():
         learn_steps = 0
         steps = 0
         done = False
-
+        
+        episode_time = time.time()# time fo a single episode
+        
         while not done:
             # ... (inner loop logic: act, step, remember, replay) ...
             valid_mask = info.get("valid_action_mask", None)
             action = agent.act(state_np, valid_action_mask=valid_mask, use_epsilon=True)
-            next_state_np, reward, done, info = env.step(action)
+            next_state_np, reward, done, info = env.step(action) #
             agent.remember(state_np, action, reward, next_state_np, done)
             loss = agent.replay()
 
@@ -79,8 +102,12 @@ def train():
         avg_loss = np.mean(losses) if losses else 0
 
         # --- Update tqdm description instead of printing every time ---
+        # pbar.set_description(
+        #     f"Avg Score: {avg_score:.2f} | Last Score: {info["score"]:.2f} | Avg Loss: {avg_loss:.4f} | Eps: {agent.epsilon:.3f}"
+        # )
+        elapsed_time = time.time() - episode_time
         pbar.set_description(
-            f"Avg Score: {avg_score:.2f} | Last Score: {episode_score:.2f} | Avg Loss: {avg_loss:.4f} | Eps: {agent.epsilon:.3f}"
+            f"Last Score: {env.game.score} | Avg Loss: {avg_loss:.4f}  | Time: {elapsed_time:.1f}s"
         )
 
         # --- Log to TensorBoard (less frequently than tqdm update) ---
@@ -93,29 +120,31 @@ def train():
             summary_writer.add_scalar('Buffer Size', len(agent.buffer), episode)
 
         # --- Optional: Print full summary less often ---
-        if episode % 100 == 0: # Print a summary line every 100 episodes
-             elapsed_time = time.time() - start_time
-             print(f"\nEp {episode} Summary | Avg Score: {avg_score:.2f} | Avg Loss: {avg_loss:.4f} | Epsilon: {agent.epsilon:.4f} | Time: {elapsed_time:.1f}s")
+        # if episode % 100 == 0: # Print a summary line every 100 episodes
+        #      elapsed_time = time.time() - start_time
+        #      print(f"\nEp {episode} Summary | Avg Score: {avg_score:.2f} | Avg Loss: {avg_loss:.4f} | Epsilon: {agent.epsilon:.4f} | Time: {elapsed_time:.1f}s")
 
 
         # Visualized Training Run (no changes needed here)
         if episode % s.VISUALIZE_EVERY_N_EPISODES == 0:
-            print("\n--- Running Visualized Episode ---")
-            if vis_env is None:
-                 vis_env = BlockdokuEnv(render_mode="human")
+            save_model(agent, version=episode) # Save the model
+            summary_writer.flush()
+            # print("\n--- Running Visualized Episode ---")
+            # if vis_env is None:
+            #      vis_env = BlockdokuEnv(render_mode="human")
 
-            vis_state_np, vis_info = vis_env.reset()
-            vis_done = False
-            vis_score = 0
-            while not vis_done:
-                 vis_env.render(fps=s.TRAIN_VIS_FPS)
-                 valid_mask = vis_info.get("valid_action_mask", None)
-                 # Pass numpy state to agent's act method
-                 vis_action = agent.act(vis_state_np, valid_action_mask=valid_mask, use_epsilon=False)
-                 vis_next_state_np, vis_reward, vis_done, vis_info = vis_env.step(vis_action)
-                 vis_state_np = vis_next_state_np # Update numpy state
-                 vis_score += vis_reward
-            print(f"--- Visualized Score: {vis_score:.2f} ---\n")
+            # vis_state_np, vis_info = vis_env.reset()
+            # vis_done = False
+            # vis_score = 0
+            # while not vis_done:
+            #      vis_env.render(fps=s.TRAIN_VIS_FPS)
+            #      valid_mask = vis_info.get("valid_action_mask", None)
+            #      # Pass numpy state to agent's act method
+            #      vis_action = agent.act(vis_state_np, valid_action_mask=valid_mask, use_epsilon=False)
+            #      vis_next_state_np, vis_reward, vis_done, vis_info = vis_env.step(vis_action)
+            #      vis_state_np = vis_next_state_np # Update numpy state
+            #      vis_score += vis_reward
+            # print(f"--- Visualized Score: {vis_score:.2f} ---\n")
 
     print("Training finished.")
     pbar.close() # Close the tqdm progress bar

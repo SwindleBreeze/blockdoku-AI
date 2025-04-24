@@ -13,7 +13,7 @@ def play(model_path):
     if not model_path or not os.path.exists(model_path):
         print(f"Error: Model file not found at {model_path}")
         # Try finding default file if path invalid
-        default_model_file = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_dqn_torch.pth")
+        default_model_file = os.path.join(s.MODEL_SAVE_DIR, "BD_v360.pth")
         if os.path.exists(default_model_file):
              print(f"Attempting to load default model: {default_model_file}")
              model_path = default_model_file
@@ -81,5 +81,5 @@ def play(model_path):
 
 if __name__ == '__main__':
     # Specify the PyTorch model file (.pth or .pt)
-    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_dqn_torch.pth")
+    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "BD_v1000.pth")
     play(model_to_play)
