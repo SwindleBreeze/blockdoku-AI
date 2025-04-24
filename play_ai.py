@@ -81,5 +81,5 @@ def play(model_path):
 
 if __name__ == '__main__':
     # Specify the PyTorch model file (.pth or .pt)
-    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "BD_v1000.pth")
+    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_dqn_torch.pth")
     play(model_to_play)

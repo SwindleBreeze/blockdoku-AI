@@ -75,18 +75,19 @@ STATE_PIECE_VECTOR_SIZE = NUM_PIECE_TYPES # Size of the multi-hot vector
 ACTION_SPACE_SIZE = NUM_PIECES_AVAILABLE * GRID_WIDTH * GRID_HEIGHT # 3 * 9 * 9 = 243
 
 # DQN Hyperparameters (Example Values - Tune these!)
-LEARNING_RATE = 5e-5
+LEARNING_RATE = 0.001
 GAMMA = 0.99 # Discount factor
-EPSILON_START = 1.0
+EPSILON_START = 1.0  # exploration initially
 EPSILON_END = 0.05
-EPSILON_DECAY_STEPS = 500000  # How many steps to decay epsilon over
+EPSILON_DECAY_STEPS = 5000  # How many steps to decay epsilon over
 REPLAY_BUFFER_SIZE = 50000
-BATCH_SIZE = 32
-TARGET_UPDATE_FREQ = 5000 # Steps between updating target network
-LEARNING_STARTS = 5000 # Steps before starting training (fill buffer)
+BATCH_SIZE = 64
+TARGET_UPDATE_FREQ = 1000 # Steps between updating target network
+
+LEARNING_STARTS = 1000 # Steps before starting training (fill buffer)
 
 # Training Settings
-NUM_EPISODES_TRAIN = 2000
+NUM_EPISODES_TRAIN = 5000
 # MAX_STEPS_PER_EPISODE = 1000 # Optional: Limit episode length
 
 # Visualization/Play Settings
@@ -95,7 +96,7 @@ PLAY_FPS = 10 # FPS for the AI playing visually
 TRAIN_VIS_FPS = 120 # Faster FPS for visualized training runs
 
 # Reward Scaling
-REWARD_SCALING_FACTOR = 15.0
+REWARD_SCALING_FACTOR = 1.0
 INVALID_MOVE_PENALTY = -0.5 # Reduced penalty (scaled)
 
 # Gradient Clipping

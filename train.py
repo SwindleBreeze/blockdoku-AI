@@ -8,20 +8,10 @@ from tqdm import tqdm # Import tqdm
 import settings as s
 from blockdoku_env import BlockdokuEnv
 from dqn_agent import DQNAgent # PyTorch version
+import json
+import datetime
 
-# --- PyTorch TensorBoard Logging ---
-try:
-    from torch.utils.tensorboard import SummaryWriter
-    log_dir = "logs/dqn_torch/" + time.strftime("%Y%m%d-%H%M%S")
-    summary_writer = SummaryWriter(log_dir=log_dir)
-    print(f"Logging TensorBoard to {log_dir}")
-    TENSORBOARD_AVAILABLE = True
-except ImportError:
-    print("TensorBoard for PyTorch not found. Install with 'pip install tensorboard'. Logging disabled.")
-    summary_writer = None
-    TENSORBOARD_AVAILABLE = False
-# ---------------------------------
-
+    
 def save_model(agent, filename="BD", version=None, save_dir="saved_models"):
     # Use provided directory or default from settings
     model_dir = save_dir if save_dir else s.MODEL_SAVE_DIR
@@ -62,7 +52,21 @@ def train():
 
     scores_window = deque(maxlen=100)
     losses = deque(maxlen=100)
-    start_time = time.time()
+    
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    json_log_path = f"logs/training_log_{timestamp}.json"
+    os.makedirs(os.path.dirname(json_log_path), exist_ok=True)
+    training_log = {
+        "episodes": [],
+        "settings": {
+            "num_episodes": s.NUM_EPISODES_TRAIN,
+            "epsilon_start": s.EPSILON_START,
+            "epsilon_end": s.EPSILON_END,
+            "learning_rate": s.LEARNING_RATE,
+            # Add other relevant settings
+        }
+    }
 
     print("Starting Training...")
     # --- Wrap the main loop with tqdm ---
@@ -78,7 +82,7 @@ def train():
         done = False
         
         episode_time = time.time()# time fo a single episode
-        
+        steps_window = deque(maxlen=100)
         while not done:
             # ... (inner loop logic: act, step, remember, replay) ...
             valid_mask = info.get("valid_action_mask", None)
@@ -105,30 +109,35 @@ def train():
         # pbar.set_description(
         #     f"Avg Score: {avg_score:.2f} | Last Score: {info["score"]:.2f} | Avg Loss: {avg_loss:.4f} | Eps: {agent.epsilon:.3f}"
         # )
+        steps_window.append(steps)
         elapsed_time = time.time() - episode_time
+        avg_steps = np.mean(steps_window) if steps_window else 0
         pbar.set_description(
-            f"Last Score: {env.game.score} | Avg Loss: {avg_loss:.4f}  | Time: {elapsed_time:.1f}s"
+            f"Avg Score: {avg_score:.2f} | Avg Steps: {avg_steps:.1f} | Avg Loss: {avg_loss:.4f} "
         )
 
-        # --- Log to TensorBoard (less frequently than tqdm update) ---
-        if TENSORBOARD_AVAILABLE and summary_writer:
-            summary_writer.add_scalar('Score', episode_score, episode)
-            summary_writer.add_scalar('Average Score (100 ep)', avg_score, episode)
-            summary_writer.add_scalar('Average Loss (100 ep)', avg_loss, episode)
-            summary_writer.add_scalar('Epsilon', agent.epsilon, episode)
-            summary_writer.add_scalar('Episode Steps', steps, episode)
-            summary_writer.add_scalar('Buffer Size', len(agent.buffer), episode)
-
-        # --- Optional: Print full summary less often ---
-        # if episode % 100 == 0: # Print a summary line every 100 episodes
-        #      elapsed_time = time.time() - start_time
-        #      print(f"\nEp {episode} Summary | Avg Score: {avg_score:.2f} | Avg Loss: {avg_loss:.4f} | Epsilon: {agent.epsilon:.4f} | Time: {elapsed_time:.1f}s")
-
+        # --- Save episode data to JSON log ---
+        episode_data = {
+            "episode": episode,
+            "score": float(episode_score),
+            "avg_score": float(avg_score),
+            "avg_loss": float(avg_loss) if avg_loss else 0.0,
+            "epsilon": float(agent.epsilon),
+            "steps": steps,
+            "buffer_size": len(agent.buffer),
+            "game score": int(env.game.score),
+            "time_taken": float(elapsed_time)
+        }
+        training_log["episodes"].append(episode_data)
+        # Write to JSON file periodically to avoid loss of data if training crashes
+        if episode % 50 == 0 or episode == 1:  # Save every 10 episodes and first episode
+            with open(json_log_path, 'w') as f:
+                json.dump(training_log, f)
+         
 
         # Visualized Training Run (no changes needed here)
         if episode % s.VISUALIZE_EVERY_N_EPISODES == 0:
             save_model(agent, version=episode) # Save the model
-            summary_writer.flush()
             # print("\n--- Running Visualized Episode ---")
             # if vis_env is None:
             #      vis_env = BlockdokuEnv(render_mode="human")
@@ -151,11 +160,13 @@ def train():
     agent.save(latest_model_path) # Save final model
     print(f"Final model saved to {latest_model_path}")
 
+    # Save the training log to JSON
+    with open(json_log_path, 'w') as f:
+        json.dump(training_log, f)
+    print(f"Training log saved to {json_log_path}")
+    
     if vis_env:
         vis_env.close()
-    if TENSORBOARD_AVAILABLE and summary_writer:
-        summary_writer.close() # Close the TensorBoard writer
-
 if __name__ == '__main__':
     # No specific GPU setup needed for PyTorch typically, it handles it automatically
     train()

@@ -62,7 +62,7 @@ class DQNAgent:
 
         # Hyperparameters from settings
         self.gamma = s.GAMMA
-        self.epsilon = s.EPSILON_START
+        self.epsilon = s.EPSILON_START    # Exploration (ep) vs. Exploitation (1-ep) Choose the best action 
         self.epsilon_min = s.EPSILON_END
         self.epsilon_decay_steps = s.EPSILON_DECAY_STEPS
         self.learning_rate = s.LEARNING_RATE
@@ -105,21 +105,28 @@ class DQNAgent:
         self.buffer.add(state_dict, action, reward, next_state_dict, done)
 
     def act(self, state_dict, valid_action_mask=None, use_epsilon=True):
-        """Chooses an action using epsilon-greedy policy."""
+        """Chooses an action using epsilon-greedy policy.
+        
+        Args:
+            state_dict (dict): The current state of the environment.
+            valid_action_mask (np.ndarray): Mask indicating valid actions.
+            use_epsilon (bool): Whether to use epsilon-greedy exploration.
+        """
         self.total_steps += 1
         self._update_epsilon()
 
-        # ! CHECK IF makes sense
+        # Epsilon-greedy exploration
+        # randomly choose an action with probability epsilon
         if use_epsilon and np.random.rand() <= self.epsilon:
             # Explore: Choose a random *valid* action
             if valid_action_mask is not None:
                 valid_indices = np.where(valid_action_mask)[0]
                 if len(valid_indices) > 0:
-                    return random.choice(valid_indices) #? Choose a random valid action
+                    return random.choice(valid_indices)
                 else:
                     return 0 # No valid moves
             else:
-                return random.randrange(self.action_size) # Fallback #!
+                return random.randrange(self.action_size) # Fallback
 
         # Exploit: Choose the best *valid* action based on Q-values
         # Exploitation
@@ -130,7 +137,7 @@ class DQNAgent:
         grid_tensor = torch.from_numpy(grid_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device) # (1, C, H, W)
         pieces_tensor = torch.from_numpy(pieces_numpy).float().unsqueeze(0).to(self.device) # (1, P)
 
-        # ??? 
+        
         self.model.eval()
         with torch.no_grad():
             act_values = self.model(grid_tensor, pieces_tensor) # Pass both inputs
@@ -185,15 +192,24 @@ class DQNAgent:
 
         # --- Calculate Target Q-values (Double DQN) ---
         # (Rest of the target calculation code remains the same)
+        self.model.eval()
+        self.target_model.eval()
         with torch.no_grad():
+            # 1. Use main network to select action 
             next_q_values_main = self.model(next_grids, next_pieces)
             best_next_actions = next_q_values_main.argmax(dim=1, keepdim=True)
+            
+            # 2. Use target network to evaluate action
             next_q_values_target = self.target_model(next_grids, next_pieces)
             target_q_subset = next_q_values_target.gather(1, best_next_actions)
+            
+            # 3. Calculate target using Bellman equation:
+            # Q(s,a) = r + γ * Q(s',a')  (if not done)
+            # Q(s,a) = r                 (if done)
             target_q_values = rewards + self.gamma * target_q_subset * (1 - dones)
 
         # --- Calculate Current Q-values ---
-        # (Remains the same)
+        self.model.train()
         q_values = self.model(grids, pieces)
         action_q_values = q_values.gather(1, actions)
 
