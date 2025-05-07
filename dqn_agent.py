@@ -3,22 +3,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F # For loss functions if needed, or use nn.MSELoss
+# import torch.nn.functional as F # Not strictly needed for SmoothL1Loss
 import random
 import os
-from collections import deque # Re-import deque if not using separate file
+# from collections import deque # Not used directly in this file if ReplayBuffer is separate
 
-import settings as s
-# Assuming replay_buffer.py exists and works with numpy arrays
-from replay_buffer import ReplayBuffer
-from utils import get_valid_action_mask
+import settings as s # Root AI settings
+from replay_buffer import ReplayBuffer # Assuming this is correctly implemented
+# utils.py is not directly imported here usually; its functions are used by env or train script
 
-# Define the Q-Network architecture using PyTorch
 # --- Define QNetwork for composite state ---
 class QNetwork(nn.Module):
     def __init__(self, grid_shape_pytorch, piece_vector_size, action_size):
         super(QNetwork, self).__init__()
-        # Grid processing branch (CNN)
         grid_channels = grid_shape_pytorch[0]
         self.conv_layers = nn.Sequential(
             nn.Conv2d(grid_channels, 32, kernel_size=3, stride=1, padding=1),
@@ -30,39 +27,31 @@ class QNetwork(nn.Module):
             nn.Flatten()
         )
 
-        # Calculate flattened CNN size
         with torch.no_grad():
             dummy_grid = torch.zeros(1, *grid_shape_pytorch)
             cnn_out_size = self.conv_layers(dummy_grid).shape[1]
 
-        # Combined processing branch (Dense)
         self.fc_layers = nn.Sequential(
-            # Input size = flattened CNN output + piece vector size
-            nn.Linear(cnn_out_size + piece_vector_size, 128),
+            nn.Linear(cnn_out_size + piece_vector_size, 128), # Adjusted from 256 for a slightly smaller FC
             nn.ReLU(),
             nn.Linear(128, action_size)
         )
 
     def forward(self, grid_input, pieces_input):
-        # Process grid through CNN
         cnn_features = self.conv_layers(grid_input)
-        # Concatenate CNN features and piece vector features
         combined_features = torch.cat((cnn_features, pieces_input), dim=1)
-        # Process combined features through Dense layers
         q_values = self.fc_layers(combined_features)
         return q_values
 
 class DQNAgent:
     def __init__(self, grid_observation_shape, piece_vector_size, action_size, load_model_path=None):
-        # Store shapes separately
         self.grid_shape_numpy = grid_observation_shape # (H, W, C)
         self.grid_shape_pytorch = (grid_observation_shape[-1], grid_observation_shape[0], grid_observation_shape[1]) # (C, H, W)
         self.piece_vector_size = piece_vector_size
         self.action_size = action_size
 
-        # Hyperparameters from settings
         self.gamma = s.GAMMA
-        self.epsilon = s.EPSILON_START    # Exploration (ep) vs. Exploitation (1-ep) Choose the best action 
+        self.epsilon = s.EPSILON_START
         self.epsilon_min = s.EPSILON_END
         self.epsilon_decay_steps = s.EPSILON_DECAY_STEPS
         self.learning_rate = s.LEARNING_RATE
@@ -71,183 +60,172 @@ class DQNAgent:
         self.target_update_freq = s.TARGET_UPDATE_FREQ
         self.learn_starts = s.LEARNING_STARTS
 
-        # Setup device (GPU or CPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {self.device}")
+        print(f"DQN Agent using device: {self.device}")
 
-        # Build networks with new architecture
         self.model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
         self.target_model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=s.LEARNING_RATE)
-        self.criterion = nn.MSELoss()
+        
+        self.criterion = nn.SmoothL1Loss() # Huber Loss
 
         if load_model_path and os.path.exists(load_model_path):
             print(f"Loading model from {load_model_path}")
-            self.load(load_model_path) # Load state dict
-            self.update_target_network() # Sync target model
-            self.epsilon = self.epsilon_min # Start with low epsilon
+            self.load(load_model_path)
+            self.update_target_network()
+            # Optionally set epsilon lower if fine-tuning a well-trained model
+            # self.epsilon = self.epsilon_min 
         else:
             print("Initializing new model.")
-            self.update_target_network() # Initialize target model weights
+            self.update_target_network()
 
-        self.target_model.eval() # Target network is only for inference
-
+        self.target_model.eval()
         self.total_steps = 0
 
-    def _preprocess_state(self, state_numpy):
-        """ Converts state from env (H, W, C) to PyTorch tensor (1, C, H, W)."""
-        # Add batch dim, permute, convert to tensor, move to device
-        state_tensor = torch.from_numpy(state_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device)
-        return state_tensor
 
     def remember(self, state_dict, action, reward, next_state_dict, done):
-        # Store the state dictionary directly
         self.buffer.add(state_dict, action, reward, next_state_dict, done)
 
     def act(self, state_dict, valid_action_mask=None, use_epsilon=True):
-        """Chooses an action using epsilon-greedy policy.
-        
-        Args:
-            state_dict (dict): The current state of the environment.
-            valid_action_mask (np.ndarray): Mask indicating valid actions.
-            use_epsilon (bool): Whether to use epsilon-greedy exploration.
-        """
-        self.total_steps += 1
+        self.total_steps += 1 # Increment total_steps for epsilon decay
         self._update_epsilon()
 
-        # Epsilon-greedy exploration
-        # randomly choose an action with probability epsilon
         if use_epsilon and np.random.rand() <= self.epsilon:
-            # Explore: Choose a random *valid* action
             if valid_action_mask is not None:
                 valid_indices = np.where(valid_action_mask)[0]
                 if len(valid_indices) > 0:
                     return random.choice(valid_indices)
                 else:
-                    return 0 # No valid moves
-            else:
-                return random.randrange(self.action_size) # Fallback
-
-        # Exploit: Choose the best *valid* action based on Q-values
-        # Exploitation
-        # Prepare state tensors from dict
-        grid_numpy = state_dict["grid"] # (H, W, C)
-        pieces_numpy = state_dict["pieces"] # (P,) P = num_piece_types
-
-        grid_tensor = torch.from_numpy(grid_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device) # (1, C, H, W)
-        pieces_tensor = torch.from_numpy(pieces_numpy).float().unsqueeze(0).to(self.device) # (1, P)
-
+                    # No valid moves according to mask, this case should be handled by game ending
+                    # but return a default action if forced to choose.
+                    return 0 
+            else: # Should not happen if env always provides mask
+                return random.randrange(self.action_size)
         
-        self.model.eval()
+        grid_numpy = state_dict["grid"]
+        pieces_numpy = state_dict["pieces"]
+        
+        # Correct preprocessing for 'act' method (permute and add batch dim)
+        grid_tensor = torch.from_numpy(grid_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device)
+        pieces_tensor = torch.from_numpy(pieces_numpy).float().unsqueeze(0).to(self.device)
+        
+        self.model.eval() # Set model to evaluation mode for inference
         with torch.no_grad():
-            act_values = self.model(grid_tensor, pieces_tensor) # Pass both inputs
-        self.model.train()
+            act_values = self.model(grid_tensor, pieces_tensor)
+        self.model.train() # Set model back to training mode
 
-        act_values_np = act_values.cpu().numpy()[0] # Get numpy array on CPU
+        act_values_np = act_values.cpu().numpy()[0]
 
-        # Apply mask and choose best valid action
         if valid_action_mask is not None:
             if len(valid_action_mask) != self.action_size:
-                 print(f"Warning: Mask size ({len(valid_action_mask)}) != Action size ({self.action_size})")
-                 best_action = np.argmax(act_values_np) # Proceed without mask
-            else:
-                 act_values_np[~valid_action_mask] = -np.inf
-                 best_action = np.argmax(act_values_np)
-                 if np.isneginf(act_values_np[best_action]):
-                     return 0 # No valid moves
-                 return int(best_action) # Return as int
-        else:
-             return int(np.argmax(act_values_np)) # Return as int
+                 print(f"Warning: Mask size ({len(valid_action_mask)}) != Action size ({self.action_size}) in act()")
+                 return int(np.argmax(act_values_np)) # Fallback if mask is wrong size
+
+            masked_act_values = np.where(valid_action_mask, act_values_np, -np.inf)
+            best_action = np.argmax(masked_act_values)
+            
+            if np.isneginf(masked_act_values[best_action]):
+                # If all valid actions have -inf Q-value, or no valid actions (shouldn't happen if game logic is right)
+                # Fallback to a random valid action if any exist
+                valid_indices = np.where(valid_action_mask)[0]
+                if len(valid_indices) > 0:
+                    # print("Warning: All valid actions have -inf Q-value, picking random valid action.")
+                    return random.choice(valid_indices)
+                else:
+                    # print("Warning: No valid actions available in act method, returning 0.")
+                    return 0 # Should ideally be caught by game over
+            return int(best_action)
+        else: # Should ideally always have a mask from the environment
+             return int(np.argmax(act_values_np))
 
     def replay(self):
-        if len(self.buffer) < self.batch_size or self.total_steps < self.learn_starts:
+        if len(self.buffer) < self.learn_starts: # Wait for buffer to fill up to learn_starts
+            return 0.0 
+        if len(self.buffer) < self.batch_size: # Ensure enough samples for a batch
             return 0.0
 
-        # Sample batch (returns list of tuples)
         experiences = self.buffer.sample(self.batch_size)
-
-        # --- Unpack experiences and process Batch Data ---
-        # Use zip(*experiences) to transpose the list of tuples
         states_dict_tuple, actions_tuple, rewards_tuple, next_states_dict_tuple, dones_tuple = zip(*experiences)
 
-        # Extract grid and pieces from dicts and convert to NumPy arrays
-        grids_np = np.array([s['grid'] for s in states_dict_tuple])             # Shape: (N, H, W, C)
-        pieces_np = np.array([s['pieces'] for s in states_dict_tuple])          # Shape: (N, P)
-        next_grids_np = np.array([s['grid'] for s in next_states_dict_tuple])   # Shape: (N, H, W, C)
-        next_pieces_np = np.array([s['pieces'] for s in next_states_dict_tuple]) # Shape: (N, P)
+        grids_np = np.array([s['grid'] for s in states_dict_tuple])            
+        pieces_np = np.array([s['pieces'] for s in states_dict_tuple])         
+        next_grids_np = np.array([s['grid'] for s in next_states_dict_tuple])  
+        next_pieces_np = np.array([s['pieces'] for s in next_states_dict_tuple])
 
-        # Convert actions, rewards, dones to NumPy arrays
         actions_np = np.array(actions_tuple)
         rewards_np = np.array(rewards_tuple)
         dones_np = np.array(dones_tuple)
 
-        # --- Convert NumPy arrays to PyTorch tensors (as before) ---
-        grids = torch.from_numpy(grids_np).float().permute(0, 3, 1, 2).to(self.device) # (N, C, H, W)
-        pieces = torch.from_numpy(pieces_np).float().to(self.device) # (N, P)
-        actions = torch.from_numpy(actions_np).long().unsqueeze(1).to(self.device) # (N, 1) Long
-        rewards = torch.from_numpy(rewards_np).float().unsqueeze(1).to(self.device) # (N, 1)
-        next_grids = torch.from_numpy(next_grids_np).float().permute(0, 3, 1, 2).to(self.device) # (N, C, H, W)
-        next_pieces = torch.from_numpy(next_pieces_np).float().to(self.device) # (N, P)
-        dones = torch.from_numpy(dones_np).float().unsqueeze(1).to(self.device) # (N, 1) Float
-
-        # --- Calculate Target Q-values (Double DQN) ---
-        # (Rest of the target calculation code remains the same)
-        self.model.eval()
-        self.target_model.eval()
+        grids = torch.from_numpy(grids_np).float().permute(0, 3, 1, 2).to(self.device) 
+        pieces = torch.from_numpy(pieces_np).float().to(self.device) 
+        actions = torch.from_numpy(actions_np).long().unsqueeze(1).to(self.device) 
+        rewards = torch.from_numpy(rewards_np).float().unsqueeze(1).to(self.device) 
+        next_grids = torch.from_numpy(next_grids_np).float().permute(0, 3, 1, 2).to(self.device)
+        next_pieces = torch.from_numpy(next_pieces_np).float().to(self.device) 
+        dones = torch.from_numpy(dones_np).float().unsqueeze(1).to(self.device) 
+        
+        # --- Target Q-value calculation (Double DQN) ---
+        self.model.eval() # Use main model for action selection in next state
+        self.target_model.eval() # Use target model for Q-value evaluation of selected action
         with torch.no_grad():
-            # 1. Use main network to select action 
-            next_q_values_main = self.model(next_grids, next_pieces)
-            best_next_actions = next_q_values_main.argmax(dim=1, keepdim=True)
+            next_q_values_main_model = self.model(next_grids, next_pieces)
+            best_next_actions = next_q_values_main_model.argmax(dim=1, keepdim=True)
             
-            # 2. Use target network to evaluate action
-            next_q_values_target = self.target_model(next_grids, next_pieces)
-            target_q_subset = next_q_values_target.gather(1, best_next_actions)
+            next_q_values_target_model = self.target_model(next_grids, next_pieces)
+            target_q_subset = next_q_values_target_model.gather(1, best_next_actions)
             
-            # 3. Calculate target using Bellman equation:
-            # Q(s,a) = r + γ * Q(s',a')  (if not done)
-            # Q(s,a) = r                 (if done)
             target_q_values = rewards + self.gamma * target_q_subset * (1 - dones)
 
-        # --- Calculate Current Q-values ---
-        self.model.train()
+        # --- Current Q-value prediction ---
+        self.model.train() # Set model to training mode for gradient calculation
         q_values = self.model(grids, pieces)
-        action_q_values = q_values.gather(1, actions)
+        action_q_values = q_values.gather(1, actions) # Q-values for the actions taken
 
-        # --- Calculate Loss ---
-        # (Remains the same)
+        # --- DEBUG PRINTS (Uncomment to diagnose extreme loss values) ---
+        # print(f"--- Replay Batch Debug ---")
+        # print(f"Rewards: min={rewards.min().item():.3f}, max={rewards.max().item():.3f}, mean={rewards.mean().item():.3f}")
+        # print(f"Dones sum: {dones.sum().item()}")
+        # print(f"TargetNet Q_subset: min={target_q_subset.min().item():.3f}, max={target_q_subset.max().item():.3f}, mean={target_q_subset.mean().item():.3f}")
+        # print(f"TD Targets: min={target_q_values.min().item():.3f}, max={target_q_values.max().item():.3f}, mean={target_q_values.mean().item():.3f}")
+        # print(f"Predicted Qs: min={action_q_values.min().item():.3f}, max={action_q_values.max().item():.3f}, mean={action_q_values.mean().item():.3f}")
+        # --- End Debug Prints ---
+
         loss = self.criterion(action_q_values, target_q_values)
 
-        # --- Optimize the Model ---
-        # (Remains the same: zero_grad, backward, clip_grad, step)
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=s.GRADIENT_CLIP_NORM)
         self.optimizer.step()
 
-        # --- Update Target Network ---
-        # (Remains the same)
         if self.total_steps % self.target_update_freq == 0:
             self.update_target_network()
 
         return loss.item()
 
     def update_target_network(self):
-        """Copies weights from the main model to the target model."""
-        #print("Updating target network...")
         self.target_model.load_state_dict(self.model.state_dict())
 
     def _update_epsilon(self):
-        """Decays epsilon linearly."""
-        if self.total_steps < self.epsilon_decay_steps:
-            self.epsilon = s.EPSILON_START - (s.EPSILON_START - s.EPSILON_END) * (self.total_steps / self.epsilon_decay_steps)
-        else:
+        # total_steps is incremented at the start of act()
+        # Decay epsilon only after learning starts if you prefer, but decaying from total_steps is common
+        if self.total_steps < self.epsilon_decay_steps + self.learn_starts : # Consider learn_starts for decay start
+             # Linear decay from EPSILON_START to EPSILON_END over epsilon_decay_steps
+             # The decay should start *after* LEARNING_STARTS if that's the intent
+             # Effective steps for decay calculation:
+             effective_decay_steps = max(0, self.total_steps - self.learn_starts)
+             if effective_decay_steps < self.epsilon_decay_steps:
+                 self.epsilon = s.EPSILON_START - (s.EPSILON_START - s.EPSILON_END) * (effective_decay_steps / self.epsilon_decay_steps)
+             else:
+                 self.epsilon = s.EPSILON_END
+        else: # Beyond decay steps + learning_starts
             self.epsilon = s.EPSILON_END
-        self.epsilon = max(self.epsilon_min, self.epsilon)
+        
+        self.epsilon = max(self.epsilon_min, self.epsilon) # Ensure it doesn't go below min
 
     def load(self, path):
         try:
-            # Load state dict, ensuring it's mapped to the correct device
             self.model.load_state_dict(torch.load(path, map_location=self.device))
+            # self.target_model.load_state_dict(self.model.state_dict()) # Also update target after loading
             print(f"Model weights loaded from {path}")
         except Exception as e:
             print(f"Error loading model weights from {path}: {e}")
@@ -255,6 +233,5 @@ class DQNAgent:
     def save(self, path):
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path), exist_ok=True)
-        # Save only the state dict
         torch.save(self.model.state_dict(), path)
-        print(f"Model weights saved to {path}")
+        # print(f"Model weights saved to {path}") # Handled in train.py
