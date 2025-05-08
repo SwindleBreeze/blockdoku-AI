@@ -65,7 +65,7 @@ class DQNAgent:
 
         self.model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
         self.target_model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=s.LEARNING_RATE)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=s.LEARNING_RATE, weight_decay=s.WEIGHT_DECAY)
         
         self.criterion = nn.SmoothL1Loss() # Huber Loss
 
@@ -206,21 +206,25 @@ class DQNAgent:
         self.target_model.load_state_dict(self.model.state_dict())
 
     def _update_epsilon(self):
-        # total_steps is incremented at the start of act()
-        # Decay epsilon only after learning starts if you prefer, but decaying from total_steps is common
-        if self.total_steps < self.epsilon_decay_steps + self.learn_starts : # Consider learn_starts for decay start
-             # Linear decay from EPSILON_START to EPSILON_END over epsilon_decay_steps
-             # The decay should start *after* LEARNING_STARTS if that's the intent
-             # Effective steps for decay calculation:
-             effective_decay_steps = max(0, self.total_steps - self.learn_starts)
-             if effective_decay_steps < self.epsilon_decay_steps:
-                 self.epsilon = s.EPSILON_START - (s.EPSILON_START - s.EPSILON_END) * (effective_decay_steps / self.epsilon_decay_steps)
-             else:
-                 self.epsilon = s.EPSILON_END
-        else: # Beyond decay steps + learning_starts
-            self.epsilon = s.EPSILON_END
+        # Calculate steps since learning started
+        effective_decay_steps = max(0, self.total_steps - self.learn_starts)
         
-        self.epsilon = max(self.epsilon_min, self.epsilon) # Ensure it doesn't go below min
+        if effective_decay_steps < self.epsilon_decay_steps:
+            # Use polynomial decay for smoother transition
+            # Power determines how gradual the decay is (higher = more gradual)
+            
+            progress = effective_decay_steps / self.epsilon_decay_steps
+            self.epsilon = s.EPSILON_END + (s.EPSILON_START - s.EPSILON_END) * ((1 - progress) ** s.POWER_DECAY)
+        else:
+            # Add a small periodic bump to epsilon to encourage occasional exploration
+            # even after the main decay period
+            base_epsilon = s.EPSILON_END
+            bump = s.BUMP_SIZE * (np.sin(self.total_steps / s.BUMP_PERIOD) * 0.5 + 0.5)
+            self.epsilon = base_epsilon + bump
+        
+        # Ensure epsilon stays within bounds
+        self.epsilon = max(self.epsilon_min, min(s.EPSILON_START, self.epsilon))
+
 
     def load(self, path):
         try:
