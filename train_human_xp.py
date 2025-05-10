@@ -49,130 +49,119 @@ def train():
     # ---------- HUMAN DEMONSTRATION LEARNING PHASE ----------
     print("Starting human demonstration learning phase...")
     try:
-        # Load human gameplay data
-        human_data_path = "/home/aljazjustin/blockdoku_AI/blockdoku-AI/human_games/recorded_human_games.json"
+        human_data_path = os.path.join(os.path.dirname(__file__), "human_games", "recorded_human_games.json")
         with open(human_data_path, 'r') as f:
-            human_data = json.load(f)
+            raw_human_data_log = json.load(f)
         
-        # Preprocess the data to fill in missing information
-        print("Preprocessing human gameplay data...")
-        processed_human_data = preprocess_human_data(human_data, env)
-        human_games = processed_human_data.get("games", [])
-    
-        if not human_games:
-            print("No human games found in the data file. Skipping demonstration learning.")
+        print("Preprocessing human gameplay data using environment simulation...")
+        # Pass the shared 'env' instance. It will be reset internally by preprocess_human_data for each game.
+        processed_human_data = preprocess_human_data(raw_human_data_log, env) 
+        human_games_processed = processed_human_data.get("games", [])
+
+        if not human_games_processed:
+            print("No human games successfully processed. Skipping demonstration learning.")
         else:
-            print(f"Loaded {len(human_games)} human games for demonstration learning")
+            print(f"Loaded and processed {len(human_games_processed)} human games for demonstration learning.")
             
-            # Track metrics for human games
-            human_game_scores = [game.get("final_score", 0) for game in human_games]
-            print(f"Human game scores: min={min(human_game_scores)}, max={max(human_game_scores)}, avg={np.mean(human_game_scores):.1f}")
-            
-            # Pre-training loop using supervised learning
-            # Pre-training loop using supervised learning
-        num_pretrain_epochs = 10  # Adjust as needed
-        total_moves = sum(len(game.get("moves", [])) for game in human_games)
-        
-        print(f"Pre-training on {total_moves} human moves for {num_pretrain_epochs} epochs...")
-        
-        # Define batch size for human training to resolve BatchNorm issue
-        human_batch_size = 8  # Adjust based on available memory and demonstration size
-            
-        for epoch in range(num_pretrain_epochs):
-            # Collect all moves across all games
-            all_moves = []
-            for game in human_games:
-                all_moves.extend(game.get("moves", []))
-            
-            # Shuffle moves for better learning
-            import random
-            random.shuffle(all_moves)
-            
-            # Process in batches
-            total_loss = 0
-            moves_processed = 0
-            batches = [all_moves[i:i + human_batch_size] for i in range(0, len(all_moves), human_batch_size)]
-            
-            for batch in tqdm(batches, desc=f"Epoch {epoch+1}/{num_pretrain_epochs}"):
-                # Skip empty batches
-                if not batch:
-                    continue
-                
-                # Collect batch data
-                batch_grids = []
-                batch_pieces = []
-                batch_actions = []
-                valid_moves_in_batch = 0
-                
-                for move in batch:
-                    try:
-                        state = move.get("state", {})
-                        action = move.get("action", 0)
-                        
-                        # Skip moves with incomplete data
-                        if not isinstance(state.get("grid"), np.ndarray) or \
-                           not isinstance(state.get("pieces_spatial"), np.ndarray):
+            human_game_scores = [game.get("final_score", 0) for game in human_games_processed]
+            if human_game_scores: # Check if list is not empty
+                print(f"Human game scores: min={min(human_game_scores)}, max={max(human_game_scores)}, avg={np.mean(human_game_scores):.1f}")
+
+            num_pretrain_epochs = 10 
+            human_batch_size = 8 
+
+            # Collect all processed (s, a, r, s', d) transitions from all games
+            all_experiences = []
+            for game in human_games_processed:
+                all_experiences.extend(game.get("moves", [])) # Each 'move' is now a dict with state, action, reward, next_state, done
+
+            if not all_experiences:
+                print("No experiences extracted from human games. Skipping pre-training.")
+            else:
+                print(f"Pre-training on {len(all_experiences)} human experiences for {num_pretrain_epochs} epochs...")
+
+                for epoch in range(num_pretrain_epochs):
+                    import random
+                    random.shuffle(all_experiences)
+                    
+                    total_loss = 0
+                    experiences_processed_in_epoch = 0
+                    
+                    batches = [all_experiences[i:i + human_batch_size] for i in range(0, len(all_experiences), human_batch_size)]
+                    
+                    for batch_experiences in tqdm(batches, desc=f"Epoch {epoch+1}/{num_pretrain_epochs}"):
+                        if not batch_experiences:
                             continue
                         
-                        # Add to batch
-                        batch_grids.append(state["grid"])
-                        batch_pieces.append(state["pieces_spatial"])
-                        batch_actions.append(action)
-                        valid_moves_in_batch += 1
+                        batch_grids = []
+                        batch_pieces_spatial = []
+                        batch_actions = []
                         
-                        # Also add this experience to the replay buffer
-                        next_state = state.copy()  # Make a copy to avoid issues with references
-                        agent.buffer.add(state, action, move.get("reward", 0), next_state, False)
-                    except Exception as e:
-                        print(f"Error processing move for batch: {e}")
-                        continue
-                
-                # Skip batch if no valid moves
-                if valid_moves_in_batch == 0:
-                    continue
-                
-                # Convert to tensors
-                try:
-                    grid_tensor = torch.from_numpy(np.stack(batch_grids)).float().permute(0, 3, 1, 2).to(agent.device)
-                    pieces_spatial_tensor = torch.from_numpy(np.stack(batch_pieces)).float().to(agent.device)
-                    action_tensor = torch.tensor(batch_actions).long().to(agent.device)
-                    
-                    # Forward pass
-                    agent.model.train()
-                    pred_actions = agent.model(grid_tensor, pieces_spatial_tensor)
-                    
-                    # Calculate loss and update weights
-                    loss = F.cross_entropy(pred_actions, action_tensor)
-                    
-                    agent.optimizer.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(agent.model.parameters(), max_norm=s.GRADIENT_CLIP_NORM)
-                    agent.optimizer.step()
-                    
-                    total_loss += loss.item() * valid_moves_in_batch
-                    moves_processed += valid_moves_in_batch
-                    
-                except Exception as e:
-                    print(f"Error in batch forward/backward: {e}")
-                    continue
-            
-            # Update target network at the end of each epoch
-            agent.update_target_network()
-            
-            avg_loss = total_loss / moves_processed if moves_processed > 0 else 0
-            print(f"Epoch {epoch+1}/{num_pretrain_epochs} - Average Loss: {avg_loss:.4f}, Processed: {moves_processed}/{len(all_moves)} moves")
+                        for exp in batch_experiences:
+                            # exp is a dict: {"state": s_dict, "action": a, "reward": r, "next_state": ns_dict, "done": d}
+                            state_dict = exp.get("state")
+                            action = exp.get("action")
+                            
+                            if state_dict and isinstance(state_dict.get("grid"), np.ndarray) and \
+                            isinstance(state_dict.get("pieces_spatial"), np.ndarray) and action is not None:
+                                
+                                batch_grids.append(state_dict["grid"])
+                                batch_pieces_spatial.append(state_dict["pieces_spatial"])
+                                batch_actions.append(action)
+                                
+                                # Add this high-quality human experience to the replay buffer
+                                agent.buffer.add(
+                                    state_dict, 
+                                    action, 
+                                    exp.get("reward"), 
+                                    exp.get("next_state"), 
+                                    exp.get("done")
+                                )
+                            else:
+                                print(f"Warning: Incomplete experience data in batch: {exp}")
+                                continue
 
-            print("Human demonstration learning phase complete!")
-            
-            # Save the pre-trained model
-            pretrained_model_path = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_pretrained.pth")
-            agent.save(pretrained_model_path)
-            print(f"Pre-trained model saved to {pretrained_model_path}")
-    
+                        if not batch_grids: # If all experiences in batch were invalid
+                            continue
+                            
+                        try:
+                            grid_tensor = torch.from_numpy(np.stack(batch_grids)).float().permute(0, 3, 1, 2).to(agent.device)
+                            pieces_spatial_tensor = torch.from_numpy(np.stack(batch_pieces_spatial)).float().to(agent.device)
+                            action_tensor = torch.tensor(batch_actions).long().to(agent.device)
+                            
+                            agent.model.train()
+                            pred_q_values = agent.model(grid_tensor, pieces_spatial_tensor) # Model predicts Q-values for all actions
+                            
+                            # For supervised learning with CrossEntropyLoss, target is the action index itself
+                            loss = F.cross_entropy(pred_q_values, action_tensor)
+                            
+                            agent.optimizer.zero_grad()
+                            loss.backward()
+                            torch.nn.utils.clip_grad_norm_(agent.model.parameters(), max_norm=s.GRADIENT_CLIP_NORM)
+                            agent.optimizer.step()
+                            
+                            total_loss += loss.item() * len(batch_actions)
+                            experiences_processed_in_epoch += len(batch_actions)
+                        except Exception as e:
+                            print(f"Error in batch forward/backward for human data: {e}")
+                            continue
+                    
+                    agent.update_target_network() # Good to do after each epoch of pre-training
+                    
+                    avg_loss = total_loss / experiences_processed_in_epoch if experiences_processed_in_epoch > 0 else 0
+                    print(f"Epoch {epoch+1}/{num_pretrain_epochs} - Avg Loss: {avg_loss:.4f}, Processed: {experiences_processed_in_epoch}/{len(all_experiences)} experiences")
+
+                print("Human demonstration learning phase complete!")
+                pretrained_model_path = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_pretrained_with_human_actions.pth")
+                agent.save(pretrained_model_path)
+                print(f"Pre-trained model saved to {pretrained_model_path}")
+
     except Exception as e:
         print(f"Error during human demonstration learning: {e}")
+        import traceback
+        traceback.print_exc() # Print full traceback for debugging
         print("Continuing with standard training...")
-    # return
+
     # ---------- STANDARD RL TRAINING PHASE ----------
     # Rest of your regular training code follows...
     episode_rewards_window = deque(maxlen=100)

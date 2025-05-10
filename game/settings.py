@@ -45,8 +45,9 @@ PIECE_DEFINITIONS = {
     'square': {'shape': [(0,0), (0,1), (1,0), (1,1)], 'color': (0, 128, 0)},
     'line_3v': {'shape': [(0,0), (1,0), (2,0)], 'color': (255, 192, 203)},
     'line_3h': {'shape': [(0,0), (0,1), (0,2)], 'color': (165, 42, 42)},
-    'u_shape': {'shape': [(0,0), (0,2), (1,0), (1,1), (1,2)], 'color': (75, 0, 130)},
-    'big_square': {'shape': [(0,0),(0,1),(0,2),(1,0),(1,1),(1,2),(2,0),(2,1),(2,2)], 'color': (218, 165, 32)}
+    'u_shape': {'shape': [(0,0), (0,2), (1,0), (1,1), (1,2)], 'color': (75, 0, 130)}
+    # Removed 'big_square' for simplicity
+    #'big_square': {'shape': [(0,0),(0,1),(0,2),(1,0),(1,1),(1,2),(2,0),(2,1),(2,2)], 'color': (218, 165, 32)}
 }
 PIECE_KEYS = list(PIECE_DEFINITIONS.keys())
 NUM_PIECE_TYPES = len(PIECE_KEYS) # Needed by AI for state vector
