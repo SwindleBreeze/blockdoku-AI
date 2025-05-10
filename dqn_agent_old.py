@@ -14,15 +14,13 @@ from replay_buffer import StandardReplayBuffer,PrioritizedReplayBuffer # Assumin
 # utils.py is not directly imported here usually; its functions are used by env or train script
 import torch.nn.functional as F # For activation functions and other operations
 
-
-
 # --- Define QNetwork for composite state ---
-class SpatialQNetwork(nn.Module):
-    def __init__(self, grid_shape_pytorch, action_size):
-        super(SpatialQNetwork, self).__init__()
+class QNetwork(nn.Module):
+    def __init__(self, grid_shape_pytorch, piece_vector_size, action_size):
+        super(QNetwork, self).__init__()
         grid_channels = grid_shape_pytorch[0]
         
-        # Board processing pathway
+        # Enhanced CNN with residual connection
         self.conv1 = nn.Conv2d(grid_channels, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
@@ -30,90 +28,53 @@ class SpatialQNetwork(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
         
-        # Add attention mechanism
-        self.attention = nn.Sequential(
-            nn.Conv2d(128, 128, kernel_size=1),  # Changed to 128 output channels
-            nn.BatchNorm2d(128),
-            nn.ReLU()
-        )
-
-        # Piece processing pathway (using a 4x4 grid for each piece)
-        self.piece_conv1 = nn.Conv2d(3, 32, kernel_size=2, stride=1)  # 3 pieces as input channels
-        self.piece_bn1 = nn.BatchNorm2d(32)
-        self.piece_conv2 = nn.Conv2d(32, 64, kernel_size=2, stride=1)
-        self.piece_bn2 = nn.BatchNorm2d(64)
+        # Piece processing pathway
+        self.piece_fc = nn.Linear(piece_vector_size, 64)
+        self.piece_bn = nn.BatchNorm1d(64)
         
-        # Add this line - this is the missing piece_to_attention layer
-        self.piece_to_attention = nn.Linear(64, 128)  # Maps piece features to 128 channels
-        
-        # Calculate output sizes
+        # Calculate CNN output size
         with torch.no_grad():
-            # Board pathway
             dummy_grid = torch.zeros(1, *grid_shape_pytorch)
             x = F.relu(self.bn1(self.conv1(dummy_grid)))
             x = F.relu(self.bn2(self.conv2(x)))
             x = F.relu(self.bn3(self.conv3(x)))
-            board_out_size = x.flatten(1).shape[1]
-            
-            # Piece pathway
-            dummy_pieces = torch.zeros(1, 3, 4, 4)  # 3 pieces, each 4x4
-            p = F.relu(self.piece_bn1(self.piece_conv1(dummy_pieces)))
-            p = F.relu(self.piece_bn2(self.piece_conv2(p)))
-            piece_out_size = p.flatten(1).shape[1]
+            cnn_out_size = x.flatten(1).shape[1]
         
         # Combined pathway
-        self.fc1 = nn.Linear(board_out_size + piece_out_size, 256)
+        self.fc1 = nn.Linear(cnn_out_size + 64, 256)
         self.fc_bn = nn.BatchNorm1d(256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, action_size)
         
         # Dropout for regularization
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, grid_input, pieces_input):
-        # Board processing
+        # Grid pathway with residual connection
         x = F.relu(self.bn1(self.conv1(grid_input)))
         residual = x
         x = F.relu(self.bn2(self.conv2(x)))
         x = x + residual  # Residual connection
-        board_features = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = torch.flatten(x, 1)
         
-        # Piece processing
-        p = F.relu(self.piece_bn1(self.piece_conv1(pieces_input)))
-        piece_features = F.relu(self.piece_bn2(self.piece_conv2(p)))
-        
-        # Apply attention between pieces and board
-        attention_features = self.attention(board_features)
-    
-        # Create attention weights based on piece features
-        piece_flat = torch.mean(piece_features, dim=(2, 3))  # Global average pooling
-        piece_weights = torch.sigmoid(self.piece_to_attention(piece_flat)).unsqueeze(2).unsqueeze(3)
-        
-        # Apply attention - now shapes will match
-        enhanced_features = board_features * attention_features * piece_weights.expand_as(attention_features)
-        board_features = board_features + enhanced_features  # Residual connection with attention
-        
-        # The rest continues as before
-        x = torch.flatten(board_features, 1)
-        p = torch.flatten(piece_features, 1)
+        # Piece pathway
+        p = F.relu(self.piece_bn(self.piece_fc(pieces_input)))
         
         # Combined pathways
         combined = torch.cat((x, p), dim=1)
-        fc1_output = F.relu(self.fc_bn(self.fc1(combined)))
+        combined = F.relu(self.fc_bn(self.fc1(combined)))
+        combined = self.dropout(combined)
+        combined = F.relu(self.fc2(combined))
+        combined = self.dropout(combined)
         
-        # Add residual connection in FC layers
-        fc1_residual = fc1_output
-        fc1_output = self.dropout(fc1_output)
-        fc2_output = F.relu(self.fc2(fc1_output))
-        fc2_output = fc2_output + fc1_residual  # Residual connection
-        fc2_output = self.dropout(fc2_output)
-        
-        return self.fc3(fc2_output)
+        return self.fc3(combined)
     
 class DQNAgent:
-    def __init__(self, grid_observation_shape, action_size, load_model_path=None):
+    def __init__(self, grid_observation_shape, piece_vector_size, action_size, load_model_path=None):
         self.grid_shape_numpy = grid_observation_shape # (H, W, C)
         self.grid_shape_pytorch = (grid_observation_shape[-1], grid_observation_shape[0], grid_observation_shape[1]) # (C, H, W)
+        self.piece_vector_size = piece_vector_size
         self.action_size = action_size
 
         self.gamma = s.GAMMA
@@ -146,9 +107,8 @@ class DQNAgent:
         # ---------------------------------------------------
 
 
-        self.model = SpatialQNetwork(self.grid_shape_pytorch, self.action_size).to(self.device)
-        self.target_model = SpatialQNetwork(self.grid_shape_pytorch, self.action_size).to(self.device)
-        
+        self.model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
+        self.target_model = QNetwork(self.grid_shape_pytorch, self.piece_vector_size, self.action_size).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=s.LEARNING_RATE, weight_decay=s.WEIGHT_DECAY)
         self.scheduler = MultiStepLR(
             self.optimizer,
@@ -190,22 +150,8 @@ class DQNAgent:
 
 
     def remember(self, state_dict, action, reward, next_state_dict, done):
-        # Make a copy of the state dict to avoid modifying the original
-        state_dict_copy = {
-            "grid": state_dict["grid"].copy(),
-            "pieces": state_dict["pieces"].copy(),
-            "pieces_spatial": state_dict["pieces_spatial"].copy()
-        }
-        
-        next_state_dict_copy = {
-            "grid": next_state_dict["grid"].copy(),
-            "pieces": next_state_dict["pieces"].copy(),
-            "pieces_spatial": next_state_dict["pieces_spatial"].copy()
-        }
-        
-        self.buffer.add(state_dict_copy, action, reward, next_state_dict_copy, done)
-    
-    
+        self.buffer.add(state_dict, action, reward, next_state_dict, done)
+
     def act(self, state_dict, valid_action_mask=None, use_epsilon=True):
         self.total_steps += 1 # Increment total_steps for epsilon decay
         self._update_epsilon()
@@ -216,25 +162,26 @@ class DQNAgent:
                 if len(valid_indices) > 0:
                     return random.choice(valid_indices)
                 else:
+                    # No valid moves according to mask, this case should be handled by game ending
+                    # but return a default action if forced to choose.
                     return 0 
-            else:
+            else: # Should not happen if env always provides mask
                 return random.randrange(self.action_size)
         
-        grid_np = state_dict["grid"]
-        pieces_spatial_np = state_dict["pieces_spatial"]
+        grid_numpy = state_dict["grid"]
+        pieces_numpy = state_dict["pieces"]
         
-        grid_tensor = torch.from_numpy(grid_np).float().permute(2, 0, 1).unsqueeze(0).to(self.device)
-        pieces_spatial_tensor = torch.from_numpy(pieces_spatial_np).float().unsqueeze(0).to(self.device)
-
-        self.model.eval()
+        # Correct preprocessing for 'act' method (permute and add batch dim)
+        grid_tensor = torch.from_numpy(grid_numpy).float().permute(2, 0, 1).unsqueeze(0).to(self.device)
+        pieces_tensor = torch.from_numpy(pieces_numpy).float().unsqueeze(0).to(self.device)
+        
+        self.model.eval() # Set model to evaluation mode for inference
         with torch.no_grad():
-            # Changed pieces_tensor to pieces_spatial_tensor here
-            act_values = self.model(grid_tensor, pieces_spatial_tensor)
-        self.model.train()
+            act_values = self.model(grid_tensor, pieces_tensor)
+        self.model.train() # Set model back to training mode
 
         act_values_np = act_values.cpu().numpy()[0]
 
-        # Rest of the method stays the same
         if valid_action_mask is not None:
             if len(valid_action_mask) != self.action_size:
                  print(f"Warning: Mask size ({len(valid_action_mask)}) != Action size ({self.action_size}) in act()")
@@ -258,81 +205,84 @@ class DQNAgent:
              return int(np.argmax(act_values_np))
 
     def replay(self):
+        # --- Modified for PER ---
         if len(self.buffer) < self.learn_starts or len(self.buffer) < self.batch_size:
             return 0.0 
 
+        # Sample batch - PER buffer returns experiences, indices, and IS weights
+        # Standard buffer returns experiences, dummy indices, and weights=1.0
         experiences_tuple, indices, is_weights = self.buffer.sample(self.batch_size)
         states_dict_tuple, actions_tuple, rewards_tuple, next_states_dict_tuple, dones_tuple = experiences_tuple
 
-        # --- Batch Data Processing ---
-        grids_np = np.array([s['grid'] for s in states_dict_tuple])
-        pieces_np = np.array([s['pieces'] for s in states_dict_tuple])
-        pieces_spatial_np = np.array([s['pieces_spatial'] for s in states_dict_tuple])
-        
-        next_grids_np = np.array([s['grid'] for s in next_states_dict_tuple])
+        # --- Batch Data Processing (remains similar) ---
+        grids_np = np.array([s['grid'] for s in states_dict_tuple])            
+        pieces_np = np.array([s['pieces'] for s in states_dict_tuple])         
+        next_grids_np = np.array([s['grid'] for s in next_states_dict_tuple])  
         next_pieces_np = np.array([s['pieces'] for s in next_states_dict_tuple])
-        next_pieces_spatial_np = np.array([s['pieces_spatial'] for s in next_states_dict_tuple])
-        
-        # Fix: Add these definitions for actions, rewards, and dones
+
         actions_np = np.array(actions_tuple)
         rewards_np = np.array(rewards_tuple)
         dones_np = np.array(dones_tuple)
-        
-        # Convert to PyTorch tensors
-        grids = torch.from_numpy(grids_np).float().permute(0, 3, 1, 2).to(self.device)
-        pieces = torch.from_numpy(pieces_np).float().to(self.device)
-        pieces_spatial = torch.from_numpy(pieces_spatial_np).float().to(self.device)
-        
-        next_grids = torch.from_numpy(next_grids_np).float().permute(0, 3, 1, 2).to(self.device)
-        next_pieces = torch.from_numpy(next_pieces_np).float().to(self.device)
-        next_pieces_spatial = torch.from_numpy(next_pieces_spatial_np).float().to(self.device)
-        
+
+        grids = torch.from_numpy(grids_np).float().permute(0, 3, 1, 2).to(self.device) 
+        pieces = torch.from_numpy(pieces_np).float().to(self.device) 
         actions = torch.from_numpy(actions_np).long().unsqueeze(1).to(self.device) 
         rewards = torch.from_numpy(rewards_np).float().unsqueeze(1).to(self.device) 
+        next_grids = torch.from_numpy(next_grids_np).float().permute(0, 3, 1, 2).to(self.device)
+        next_pieces = torch.from_numpy(next_pieces_np).float().to(self.device) 
         dones = torch.from_numpy(dones_np).float().unsqueeze(1).to(self.device) 
-        
-        # Convert IS weights to tensor
+        # --- PER: Convert IS weights to tensor ---
         is_weights_tensor = torch.from_numpy(is_weights).float().unsqueeze(1).to(self.device)
         
-        # Target Q-value calculation (Double DQN)
+        # --- Target Q-value calculation (Double DQN - remains the same) ---
         self.model.eval() 
         self.target_model.eval()
         with torch.no_grad():
-            # Fix: Use next_pieces_spatial consistently
-            next_q_values_target_model = self.target_model(next_grids, next_pieces_spatial)
-            next_q_values_main_model = self.model(next_grids, next_pieces_spatial)
+            next_q_values_main_model = self.model(next_grids, next_pieces)
+            best_next_actions = next_q_values_main_model.argmax(dim=1, keepdim=True)
             
-            # Fix: Calculate best actions and target Q values
-            best_next_actions = torch.argmax(next_q_values_main_model, dim=1).unsqueeze(1)
+            next_q_values_target_model = self.target_model(next_grids, next_pieces)
             target_q_subset = next_q_values_target_model.gather(1, best_next_actions)
             
             target_q_values = rewards + self.gamma * target_q_subset * (1 - dones)
 
-        # Current Q-value prediction
+        # --- Current Q-value prediction ---
         self.model.train() 
-        q_values = self.model(grids, pieces_spatial)
+        q_values = self.model(grids, pieces)
         action_q_values = q_values.gather(1, actions)
-        
-        # Calculate Loss (Modified for PER)
-        elementwise_loss = self.criterion(action_q_values, target_q_values)
-        loss = (is_weights_tensor * elementwise_loss).mean()
 
-        # Calculate TD errors to update priorities
+        
+        # --- DEBUG PRINTS (Uncomment to diagnose extreme loss values) ---
+        # print(f"--- Replay Batch Debug ---")
+        # print(f"Rewards: min={rewards.min().item():.3f}, max={rewards.max().item():.3f}, mean={rewards.mean().item():.3f}")
+        # print(f"Dones sum: {dones.sum().item()}")
+        # print(f"TargetNet Q_subset: min={target_q_subset.min().item():.3f}, max={target_q_subset.max().item():.3f}, mean={target_q_subset.mean().item():.3f}")
+        # print(f"TD Targets: min={target_q_values.min().item():.3f}, max={target_q_values.max().item():.3f}, mean={target_q_values.mean().item():.3f}")
+        # print(f"Predicted Qs: min={action_q_values.min().item():.3f}, max={action_q_values.max().item():.3f}, mean={action_q_values.mean().item():.3f}")
+        # --- End Debug Prints ---
+
+        # --- Calculate Loss (Modified for PER) ---
+        # Calculate element-wise loss (since reduction='none')
+        elementwise_loss = self.criterion(action_q_values, target_q_values)
+        
+        # Apply Importance Sampling weights
+        loss = (is_weights_tensor * elementwise_loss).mean() # Weighted mean
+
+        # --- Calculate TD errors to update priorities ---
+        # Use detach() to prevent gradients flowing back from this calculation
         td_errors_abs = torch.abs(target_q_values - action_q_values).detach().cpu().numpy().flatten()
 
-        # Apply scaling to TD errors to prevent near-zero values
-        td_errors_scaled = np.clip(td_errors_abs, 0.1, 10.0)  # Clip to reasonable range
-
-        # Optimize the Model
+        # --- Optimize the Model ---
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=s.GRADIENT_CLIP_NORM)
         self.optimizer.step()
 
-        # Update Priorities in PER Buffer using scaled TD errors
+        # --- Update Priorities in PER Buffer ---
         if s.PER_ENABLED:
-            self.buffer.update_priorities(indices, td_errors_scaled)
-        # Update Target Network
+             self.buffer.update_priorities(indices, td_errors_abs) # Pass indices and errors
+
+        # --- Update Target Network ---
         if self.total_steps % self.target_update_freq == 0:
             self.update_target_network()
 

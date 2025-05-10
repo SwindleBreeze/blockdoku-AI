@@ -1,4 +1,9 @@
 # train.py
+import os
+# Fix for MKL threading issues
+os.environ['MKL_THREADING_LAYER'] = 'GNU'
+os.environ['OMP_NUM_THREADS'] = '1'
+
 import numpy as np
 import os
 import time
@@ -37,11 +42,11 @@ def train():
     latest_model_path = os.path.join(s.MODEL_SAVE_DIR, model_filename) 
 
     grid_shape_numpy = (s.GRID_HEIGHT, s.GRID_WIDTH, s.STATE_GRID_CHANNELS)
-    piece_vector_size = s.STATE_PIECE_VECTOR_SIZE
+    # piece_vector_size = s.STATE_PIECE_VECTOR_SIZE
     
     # Ensure you are not loading a model that might be incompatible with new reward structure
     # For a fresh start, ensure latest_model_path doesn't exist or pass None
-    agent = DQNAgent(grid_shape_numpy, piece_vector_size, env.action_size,
+    agent = DQNAgent(grid_shape_numpy, env.action_size,
                      load_model_path=None) # Start fresh: load_model_path=None
                      # load_model_path=latest_model_path if os.path.exists(latest_model_path) else None)
 
@@ -51,7 +56,7 @@ def train():
     losses_window = deque(maxlen=100)          # Renamed for clarity
     steps_window = deque(maxlen=100)
     
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     json_log_path = f"logs/training_log_{timestamp}.json"
     os.makedirs(os.path.dirname(json_log_path), exist_ok=True)
     
@@ -183,7 +188,7 @@ def train():
         episode_time_taken = time.time() - episode_start_time
 
         pbar.set_description(
-            f"RLS: {avg_rl_reward:.2f} | GS: {avg_game_score:.1f} | S: {avg_steps:.1f} | L: {avg_loss:.2f} | E: {agent.epsilon:.2f}"
+            f"RLS: {avg_rl_reward:.2f} | GS: {avg_game_score:.1f} | S: {avg_steps:.1f} | L: {avg_loss:.4f} | E: {agent.epsilon:.2f}"
         )
 
         episode_data = {
@@ -216,6 +221,11 @@ def train():
             # if vis_env is None:
             #      vis_env = BlockdokuEnv(render_mode="human")
             # ... (visualization loop) ...
+
+        if episode % s.SCH_UPDATE == 0:  # Update every 100 episodes
+            current_lr = agent.scheduler_step()
+            if current_lr is not None:
+                episode_data["learning_rate"] = float(current_lr)
 
     print("Training finished.")
     pbar.close() 

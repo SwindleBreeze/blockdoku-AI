@@ -5,7 +5,7 @@ import settings as s # Root AI settings for rewards and AI params
 import game.settings as s_game # Game specific settings for display or non-AI game logic
 from game.grid import Grid
 from game.game_state import GameState
-from utils import decode_action, get_valid_action_mask
+from utils import decode_action, get_valid_action_mask,get_piece_spatial_representation
 
 class BlockdokuEnv:
     def __init__(self, render_mode=None):
@@ -115,16 +115,41 @@ class BlockdokuEnv:
              "almost_full_count": 0
          }
 
+    # def _get_observation(self):
+    #     grid_state = self.grid.get_grid_state() 
+    #     available_pieces_vector = np.zeros(s.NUM_PIECE_TYPES, dtype=np.float32)
+    #     for piece in self.game.current_pieces:
+    #         if piece.shape_key in s.PIECE_KEY_TO_ID:
+    #             piece_id = s.PIECE_KEY_TO_ID[piece.shape_key]
+    #             available_pieces_vector[piece_id] = 1.0
+    #     return {
+    #         "grid": grid_state,
+    #         "pieces": available_pieces_vector,
+    
+
+    #     }
     def _get_observation(self):
         grid_state = self.grid.get_grid_state() 
         available_pieces_vector = np.zeros(s.NUM_PIECE_TYPES, dtype=np.float32)
+        
+        # Get piece keys for spatial representation
+        piece_keys = []
         for piece in self.game.current_pieces:
-            if piece.shape_key in s.PIECE_KEY_TO_ID:
-                piece_id = s.PIECE_KEY_TO_ID[piece.shape_key]
-                available_pieces_vector[piece_id] = 1.0
+            if piece:  # Make sure piece is not None
+                piece_keys.append(piece.shape_key)
+                if piece.shape_key in s.PIECE_KEY_TO_ID:
+                    piece_id = s.PIECE_KEY_TO_ID[piece.shape_key]
+                    available_pieces_vector[piece_id] = 1.0
+            else:
+                piece_keys.append(None)
+        
+        # Get spatial representation of pieces
+        pieces_spatial = get_piece_spatial_representation(piece_keys)
+        
         return {
             "grid": grid_state,
-            "pieces": available_pieces_vector
+            "pieces": available_pieces_vector,
+            "pieces_spatial": pieces_spatial
         }
 
     def render(self, fps=None):
