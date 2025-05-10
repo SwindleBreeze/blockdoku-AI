@@ -76,12 +76,74 @@ def train():
         }
     }
 
+    
+    # Pre-fill buffer with random episodes
+    print(f"Pre-filling replay buffer to {s.LEARNING_STARTS} experiences...")
+    buffer_fill_start_time = time.time()
+    buffer_steps = 0
+    buffer_episode = 0
+
+    # Track ALL episode statistics (not just sliding window)
+    all_rewards = []
+    all_game_scores = []
+    all_steps = []
+
+    # Simple progress bar that only shows percent
+    pbar = tqdm(total=s.LEARNING_STARTS, bar_format='{l_bar}{bar}| {percentage:3.0f}%')
+
+    while buffer_steps < s.LEARNING_STARTS:
+        buffer_episode += 1
+        state_np, info = env.reset()
+        current_episode_reward = 0
+        steps_in_episode = 0
+        done = False
+        
+        # Play a complete episode
+        while not done:
+            valid_mask = info.get("valid_action_mask", None)
+            action = agent.act(state_np, valid_action_mask=valid_mask, use_epsilon=True)
+            
+            next_state_np, reward, done, info = env.step(action)
+            agent.remember(state_np, action, reward, next_state_np, done)
+            
+            state_np = next_state_np
+            current_episode_reward += reward
+            steps_in_episode += 1
+            buffer_steps += 1
+            pbar.update(1)
+            
+            # Stop if we've reached the target steps
+            if buffer_steps >= s.LEARNING_STARTS:
+                break
+        
+        # Track statistics for EVERY episode
+        all_rewards.append(current_episode_reward)
+        all_game_scores.append(info.get("game_score_display", 0))
+        all_steps.append(steps_in_episode)
+
+    pbar.close()
+
+    # Calculate averages across ALL episodes
+    avg_reward_all = np.mean(all_rewards)
+    avg_game_score_all = np.mean(all_game_scores)
+    avg_steps_all = np.mean(all_steps)
+
+    # Buffer filling complete
+    buffer_fill_time = time.time() - buffer_fill_start_time
+    print(f"\nBuffer filled with {buffer_steps} experiences over {buffer_episode} episodes in {buffer_fill_time:.2f} seconds")
+    print(f"All episodes statistics:")
+    print(f"  RL Score: avg={avg_reward_all:.2f}")
+    print(f"  Game Score: avg={avg_game_score_all:.2f}")
+    print(f"  Steps per episode: avg={avg_steps_all:.1f}")
+    print(f"Experience buffer status:")
+    print(f"  Current buffer size: {len(agent.buffer)} experiences")
+    # Main training loop begins here
     print("Starting Training...")
     pbar = tqdm(range(1, s.NUM_EPISODES_TRAIN + 1), initial=1, total=s.NUM_EPISODES_TRAIN, unit="ep")
-
+    
     for episode in pbar:
         state_np, info = env.reset()
-        current_episode_rl_reward = 0 # RL reward for this episode
+        current_episode_rl_reward = 0
         total_episode_loss = 0
         learn_steps_in_episode = 0
         steps_in_episode = 0
@@ -93,15 +155,16 @@ def train():
             valid_mask = info.get("valid_action_mask", None)
             action = agent.act(state_np, valid_action_mask=valid_mask, use_epsilon=True)
             
-            next_state_np, rl_reward_step, done, info = env.step(action) 
+            next_state_np, rl_reward_step, done, info = env.step(action)
             
             agent.remember(state_np, action, rl_reward_step, next_state_np, done)
+            # Now we can start learning right away since the buffer is filled
             loss = agent.replay()
-
-            state_np = next_state_np
-            current_episode_rl_reward += rl_reward_step # Accumulate RL reward
             
-            if loss is not None and loss > 0: # agent.replay() might return 0.0 if not learning yet
+            state_np = next_state_np
+            current_episode_rl_reward += rl_reward_step
+            
+            if loss is not None and loss > 0:
                 total_episode_loss += loss
                 learn_steps_in_episode += 1
             steps_in_episode += 1
@@ -120,7 +183,7 @@ def train():
         episode_time_taken = time.time() - episode_start_time
 
         pbar.set_description(
-            f"AvgRLScore: {avg_rl_reward:.2f} | AvgGameScore: {avg_game_score:.1f} | AvgSteps: {avg_steps:.1f} | AvgLoss: {avg_loss:.4f} | Eps: {agent.epsilon:.3f}"
+            f"RLS: {avg_rl_reward:.2f} | GS: {avg_game_score:.1f} | S: {avg_steps:.1f} | L: {avg_loss:.2f} | E: {agent.epsilon:.2f}"
         )
 
         episode_data = {
@@ -138,6 +201,7 @@ def train():
             "cols_cleared": info.get("cols_cleared", 0),
             "squares_cleared": info.get("squares_cleared", 0),
             "almost_full_count": info.get("almost_full_count", 0) # New
+
         }
         training_log["episodes"].append(episode_data)
         
