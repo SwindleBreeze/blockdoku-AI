@@ -140,7 +140,7 @@ class BlockdokuEnv:
             self.game.draw_game_over(self.screen)
         pygame.display.flip()
         if self.clock:
-            target_fps = fps if fps is not None else s_game.PLAY_FPS
+            target_fps = fps if fps is not None else s_game.FPS
             self.clock.tick(target_fps)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:

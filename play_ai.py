@@ -6,7 +6,7 @@ import os
 import pygame # Need pygame for the quit event check
 import settings as s
 from blockdoku_env import BlockdokuEnv
-from dqn_agent import DQNAgent # PyTorch version
+from ppo_agent import DQNAgent # PyTorch version
 
 def play(model_path):
     # Check for the PyTorch model file extension (.pth or .pt)
@@ -35,7 +35,7 @@ def play(model_path):
     steps = 0
 
     while not done:
-        env.render(fps=s.PLAY_FPS)
+        env.render(fps=s.PLAY_FPS_AI)
 
         valid_mask = info.get("valid_action_mask", None)
         # Pass numpy state to act method
@@ -81,5 +81,5 @@ def play(model_path):
 
 if __name__ == '__main__':
     # Specify the PyTorch model file (.pth or .pt)
-    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "blockdoku_dqn_torch.pth")
+    model_to_play = os.path.join(s.MODEL_SAVE_DIR, "BD_v20000.pth")
     play(model_to_play)
