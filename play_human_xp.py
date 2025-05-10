@@ -194,7 +194,7 @@ def main():
     if game_played_this_session and current_game_moves: # Only save if moves were made in this session
         final_score = game.score # Get final score of the game just played
         game_session_log = {
-            "final_game_score": final_score, # Or "final_score" to match your JSON
+            "final_score": final_score, # Or "final_score" to match your JSON
             "moves": current_game_moves
         }
         games_list_to_append_to.append(game_session_log) # Append the new game to the loaded list
