@@ -1,5 +1,6 @@
 # genetic_solver.py
 import random
+import torch
 import copy
 import sys
 import os
@@ -32,6 +33,9 @@ except ImportError as e:
     print("Ensure 'utils.py' and your AI settings file (e.g., 'settings.py' aliased as s_ai)")
     print("are in the same directory as 'genetic_solver.py'.")
     sys.exit(1)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using PyTorch device: {device}")
 
 # --- Default GA Parameters (will be configurable) ---
 DEFAULT_POPULATION_SIZE = 30
@@ -139,6 +143,9 @@ class BlockdokuGeneticAlgorithm:
         self.generation = 0
         self.best_overall_fitness = -float('inf')
         self.best_overall_individual = None
+
+        self.device = device
+        print(f"Using device: {self.device}")
         
         # Initialize or load from checkpoint
         if args.load_checkpoint:

@@ -186,44 +186,45 @@ class Grid:
 
         return newly_almost_full_count, almost_full_details
 
+    def count_potential_clears(self) -> Tuple[int, int, int]:
+        """
+        Counts the number of rows, columns, and 3x3 squares that are currently full
+        and would be cleared, without actually modifying the grid.
+        Returns a tuple: (num_rows_would_clear, num_cols_would_clear, num_squares_would_clear).
+        """
+        rows_that_would_clear = 0
+        cols_that_would_clear = 0
+        squares_that_would_clear = 0
 
-    def clear_lines_and_squares(self) -> Tuple[int, int, int]:
-        # ... (implementation remains the same)
-        rows_to_clear = []
-        cols_to_clear = []
-        squares_to_clear = [] 
-
+        # Check for full rows
         for r in range(self.height):
-            if self.count_filled_in_row(r) == self.width: # A full row has 9 cells
-                rows_to_clear.append(r)
+            if all(self.grid_data[r][c] is not None for c in range(self.width)):
+                rows_that_would_clear += 1
 
+        # Check for full columns
         for c in range(self.width):
-            if self.count_filled_in_col(c) == self.height: # A full col has 9 cells
-                cols_to_clear.append(c)
+            if all(self.grid_data[r][c] is not None for r in range(self.height)):
+                cols_that_would_clear += 1
 
-        for r_start in range(0, self.height -2): # Iterate 0, 3, 6 for a 9x9 grid
-            for c_start in range(0, self.width -2): # Iterate 0, 3, 6
-                if (r_start % 3 == 0 and c_start % 3 == 0): # Ensure it's a valid 3x3 square start
-                    if self.count_filled_in_square(r_start, c_start) == 9: # A full 3x3 square
-                        squares_to_clear.append((r_start, c_start))
-        
-        # Remove duplicates if a square clear also implies row/col clears (e.g. big_square piece)
-        # The current clearing logic handles cells_to_clear set correctly.
-        # The counts returned are distinct region clear events.
-
-        cells_to_clear = set()
-        for r_idx in rows_to_clear:
-            for c in range(self.width):
-                cells_to_clear.add((r_idx, c))
-        for c_idx in cols_to_clear:
-            for r in range(self.height):
-                cells_to_clear.add((r, c_idx))
-        for r_start, c_start in squares_to_clear:
-            for r in range(r_start, r_start + 3):
-                for c in range(c_start, c_start + 3):
-                    cells_to_clear.add((r, c))
-
-        for r_val, c_val in cells_to_clear: # Renamed to avoid conflict
-            self.grid_data[r_val][c_val] = None
+        # Check for full 3x3 squares
+        for r_start in range(0, self.height, 3):
+            for c_start in range(0, self.width, 3):
+                is_full = True
+                # Iterate within the 3x3 square
+                for r_offset in range(3):
+                    for c_offset in range(3):
+                        # Check bounds, though for a 9x9 grid and step 3, r_start+2 and c_start+2 are always in bounds
+                        # if r_start + r_offset >= self.height or c_start + c_offset >= self.width:
+                        #     is_full = False # Should not happen with correct iteration
+                        #     break
+                        if self.grid_data[r_start + r_offset][c_start + c_offset] is None:
+                            is_full = False
+                            break
+                    if not is_full:
+                        break
+                if is_full:
+                    squares_that_would_clear += 1
             
-        return len(rows_to_clear), len(cols_to_clear), len(squares_to_clear)
+        return rows_that_would_clear, cols_that_would_clear, squares_that_would_clear
+
+    

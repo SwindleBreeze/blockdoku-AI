@@ -30,24 +30,79 @@ R_GAME_LOST_IMMEDIATE = -50.0        # Penalty if a move directly leads to game 
                                      # Note: The GA's main fitness is still game score, these are components of the heuristic.
 
 # --- Genetic Algorithm Parameters ---
-GA_POPULATION_SIZE = 20  # Increased for better exploration
-GA_NUM_GENERATIONS = 50 # Increased for more evolution
-GA_MUTATION_RATE_INITIAL = 0.15
-GA_MUTATION_RATE_MIN = 0.02
-GA_MUTATION_RATE_MAX = 0.30
-GA_MUTATION_STRENGTH_INITIAL = 0.3
-GA_MUTATION_STRENGTH_MIN = 0.05
-GA_MUTATION_STRENGTH_MAX = 0.5
-GA_CROSSOVER_RATE = 0.7
-GA_ELITISM_COUNT = 3 # Increased slightly
-GA_NUM_GAMES_PER_EVALUATION = 2 # Keep 1 for speed, or increase for robustness (e.g., 3)
+# GA_POPULATION_SIZE = 150  # Increased for better exploration
+# GA_NUM_GENERATIONS = 300 # Increased for more evolution
+# GA_MUTATION_RATE_INITIAL = 0.15
+# GA_MUTATION_RATE_MIN = 0.02
+# GA_MUTATION_RATE_MAX = 0.30
+# GA_MUTATION_STRENGTH_INITIAL = 0.3
+# GA_MUTATION_STRENGTH_MIN = 0.05
+# GA_MUTATION_STRENGTH_MAX = 0.5
+# GA_CROSSOVER_RATE = 0.7
+# GA_ELITISM_COUNT = 10 # Increased slightly
+# GA_NUM_GAMES_PER_EVALUATION = 3 # Keep 1 for speed, or increase for robustness (e.g., 3)
+
+# RUN 2
+# GA_POPULATION_SIZE = 150  # Increased further for broader search
+# GA_NUM_GENERATIONS = 300 # Significantly increased for more evolutionary cycles
+# GA_MUTATION_RATE_INITIAL = 0.10 # Slightly lower initial rate, adaptive mutation can increase it
+# GA_MUTATION_RATE_MIN = 0.01 # Lower minimum for fine-tuning in later stages
+# GA_MUTATION_RATE_MAX = 0.35 # Slightly higher max to escape local optima if needed
+# GA_MUTATION_STRENGTH_INITIAL = 0.25 # Slightly lower initial strength
+# GA_MUTATION_STRENGTH_MIN = 0.02 # Lower minimum strength for finer adjustments
+# GA_MUTATION_STRENGTH_MAX = 0.55 # Slightly higher max strength
+# GA_CROSSOVER_RATE = 0.75 # Slightly increased to promote mixing of solutions
+# GA_ELITISM_COUNT = 10 # Increased proportionally to new population size (approx 7%)
+# GA_NUM_GAMES_PER_EVALUATION = 3 # Increased for more robust fitness evaluation
+
+# RUN 3
+# GA_POPULATION_SIZE = 150  # Increased further for broader search
+# GA_NUM_GENERATIONS = 300 # Significantly increased for more evolutionary cycles
+# GA_MUTATION_RATE_INITIAL = 0.10 # Slightly lower initial rate, adaptive mutation can increase it
+# GA_MUTATION_RATE_MIN = 0.01 # Lower minimum for fine-tuning in later stages
+# GA_MUTATION_RATE_MAX = 0.30 # Reduced from 0.35 to cap aggressive mutation
+# GA_MUTATION_STRENGTH_INITIAL = 0.25 # Slightly lower initial strength
+# GA_MUTATION_STRENGTH_MIN = 0.02 # Lower minimum strength for finer adjustments
+# GA_MUTATION_STRENGTH_MAX = 0.45 # Reduced from 0.55 to cap aggressive mutation
+# GA_CROSSOVER_RATE = 0.75 # Slightly increased to promote mixing of solutions
+# GA_ELITISM_COUNT = 10 # Increased proportionally to new population size (approx 7%)
+# GA_NUM_GAMES_PER_EVALUATION = 3 # Increased for more robust fitness evaluation
+
+# RUN 4
+GA_POPULATION_SIZE = 150
+GA_NUM_GENERATIONS = 300 # Or more if you want to see if it recovers
+GA_MUTATION_RATE_INITIAL = 0.10
+GA_MUTATION_RATE_MIN = 0.01
+GA_MUTATION_RATE_MAX = 0.25 # Further reduced from 0.30 to prevent overly strong mutations late-game
+GA_MUTATION_STRENGTH_INITIAL = 0.25
+GA_MUTATION_STRENGTH_MIN = 0.02
+GA_MUTATION_STRENGTH_MAX = 0.40 # Further reduced from 0.45
+GA_CROSSOVER_RATE = 0.75
+GA_ELITISM_COUNT = 10
+GA_NUM_GAMES_PER_EVALUATION = 3
+
 
 # Adaptive Mutation Parameters
-GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 10 # Generations without improvement to trigger increased mutation
-GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.02
-GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.02
-GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Slight decrease if improving
-GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
+# GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 10 # Generations without improvement to trigger increased mutation
+# GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.02
+# GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.02
+# GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Slight decrease if improving
+# GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
+
+# RUN 3
+# GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 15 # Increased from 10 to allow more time before aggressive increase
+# GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
+# GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
+# GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Slight decrease if improving
+# GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
+
+
+# RUN 4
+GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 20 # Increased from 15, allow more stability before increasing mutation
+GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.01  # Reduced from 0.015 for a much gentler increase
+GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.01 # Reduced from 0.015 for a much gentler increase
+GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Kept the same, allows reduction if improvements occur
+GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Kept the same
 
 
 # Heuristic Definitions for GA Chromosome
@@ -70,7 +125,7 @@ GA_NUM_HEURISTICS = 7 # Total number of weights in each chromosome
 
 # --- File Paths ---
 GA_MODEL_SAVE_DIR = "ga_trained_models"
-GA_LOG_FILE = "ga_training_log.csv"
+
 GA_BEST_WEIGHTS_FILE = "best_blockdoku_ga_weights.txt"
 
 # Visualization/Play Settings (for AI playing/training vis) - Used by testing script

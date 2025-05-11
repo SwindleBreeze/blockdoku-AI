@@ -6,6 +6,9 @@ import os
 import csv
 import numpy as np
 from tqdm.auto import tqdm
+from multiprocessing import Pool, cpu_count # Added
+from functools import partial # Added
+from datetime import datetime 
 
 # --- Game Imports ---
 try:
@@ -27,6 +30,22 @@ except ImportError as e:
 # These will be assigned in run_ga to allow for easier modification via settings
 current_mutation_rate = s_ai.GA_MUTATION_RATE_INITIAL
 current_mutation_strength = s_ai.GA_MUTATION_STRENGTH_INITIAL
+
+# It's good practice to ensure functions run by worker processes can initialize necessary libraries
+# if they rely on global state from the main process that isn't inherited.
+# For Pygame, if GameState or Grid directly use pygame.font without checking/re-initializing:
+
+def worker_init_pygame():
+    """Initializes Pygame modules for a worker process if necessary."""
+    try:
+        import pygame
+        pygame.init() # Basic pygame init
+        pygame.font.init() # Specifically for font loading
+        # print("Pygame (and font) initialized in worker.") # For debugging
+    except Exception as e:
+        # print(f"Worker Pygame init warning: {e}")
+        pass # Continue if non-critical or handled within GameState
+
 
 # --- Helper Functions for Calculating Heuristics ---
 def calculate_aggregate_height(grid_obj: Grid) -> int:
@@ -133,8 +152,8 @@ def calculate_fitness(individual_weights: list[float], num_games: int = s_ai.GA_
                     af_count, _ = sim_grid_post_placement_pre_clear.get_almost_full_regions_info(piece_cells_on_grid)
                     move_outcome_details['almost_full_reward'] = af_count * s_ai.R_ALMOST_FULL_IMMEDIATE
                     
-                    temp_grid_for_clear_counting = copy.deepcopy(sim_grid_post_placement_pre_clear)
-                    cleared_r, cleared_c, cleared_sq = temp_grid_for_clear_counting.clear_lines_and_squares()
+                    # temp_grid_for_clear_counting = copy.deepcopy(sim_grid_post_placement_pre_clear)
+                    cleared_r, cleared_c, cleared_sq = sim_grid_post_placement_pre_clear.count_potential_clears()
                     total_clears = cleared_r + cleared_c + cleared_sq
                     move_outcome_details['clear_reward'] = total_clears * s_ai.R_CLEARED_LINE_COL_IMMEDIATE # Assuming same reward for all clear types for simplicity
 
@@ -247,7 +266,7 @@ def setup_logging(log_filename: str):
 def log_generation_stats(log_filepath: str, generation: int, best_fitness: float, avg_fitness: float, std_dev_fitness: float, best_individual_weights: list[float]):
     global current_mutation_rate, current_mutation_strength
     row = [generation, f"{best_fitness:.2f}", f"{avg_fitness:.2f}", f"{std_dev_fitness:.2f}", f"{current_mutation_rate:.4f}", f"{current_mutation_strength:.4f}"]
-    row.extend([f"{w:.4f}" for w in best_individual_weights])
+    row.extend([f"{w}" for w in best_individual_weights])
     with open(log_filepath, 'a', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(row)
@@ -258,35 +277,71 @@ def run_ga():
     current_mutation_rate = s_ai.GA_MUTATION_RATE_INITIAL
     current_mutation_strength = s_ai.GA_MUTATION_STRENGTH_INITIAL
 
-    pygame_initialized = False
+    # Pygame initialization in the main process (for potential non-GA uses or if GameState expects it)
+    pygame_initialized_main = False
     try:
         import pygame
         pygame.init()
         pygame.font.init()
-        pygame_initialized = True
-        print("Pygame initialized successfully for GameState compatibility.")
+        pygame_initialized_main = True
+        print("Pygame initialized successfully in main process for GameState compatibility.")
     except Exception as e:
-        print(f"Pygame initialization warning: {e}. Continuing with simulation.")
+        print(f"Main process Pygame initialization warning: {e}. Continuing with simulation.")
 
-    log_filepath = setup_logging(s_ai.GA_LOG_FILE)
+    timestamp = datetime.now().strftime("%d-%m-%H-%M")
+    log_filename = f"training_log_{timestamp}.csv"
+    log_filepath = setup_logging(log_filename)
     population = [create_individual() for _ in range(s_ai.GA_POPULATION_SIZE)]
     best_overall_fitness_so_far = -float('inf')
     best_overall_individual_so_far = None
     generations_since_last_improvement = 0
+    
+    fitness_cache = {} # Initialize fitness cache
+
+    # Determine number of processes for the pool
+    # Using cpu_count() can maximize utilization, but might make the system less responsive.
+    # Consider using cpu_count() - 1 or a fixed number if needed.
+    num_processes = max(1, cpu_count() -1 if cpu_count() > 1 else 1) 
+    print(f"Using {num_processes} processes for fitness evaluation.")
+
+    fitness_calculator_with_fixed_games = partial(calculate_fitness, num_games=s_ai.GA_NUM_GAMES_PER_EVALUATION)
 
     for generation in tqdm(range(1, s_ai.GA_NUM_GENERATIONS + 1), desc="Evolving Generations"):
-        population_with_fitness = []
-        fitness_scores_this_gen = []
-        for individual in tqdm(population, desc=f"Gen {generation} Fitness Eval", leave=False, unit="indiv"):
-            fitness = calculate_fitness(individual) # Uses GA_NUM_GAMES_PER_EVALUATION from s_ai
-            population_with_fitness.append((individual, fitness))
-            fitness_scores_this_gen.append(fitness)
+        fitness_scores_this_gen = [0.0] * len(population) # Initialize with placeholders
+        individuals_to_evaluate_indices = []
+        individuals_to_evaluate_actual = []
+
+        # Check cache first
+        for i, ind in enumerate(population):
+            ind_tuple = tuple(ind) # Convert list to tuple for dict key
+            if ind_tuple in fitness_cache:
+                fitness_scores_this_gen[i] = fitness_cache[ind_tuple]
+            else:
+                individuals_to_evaluate_indices.append(i)
+                individuals_to_evaluate_actual.append(ind)
+        
+        # Parallelize fitness calculation for non-cached individuals
+        if individuals_to_evaluate_actual:
+            with Pool(processes=num_processes, initializer=worker_init_pygame) as pool:
+                # pool.imap preserves order and works well with tqdm for progress
+                calculated_scores = list(tqdm(pool.imap(fitness_calculator_with_fixed_games, individuals_to_evaluate_actual),
+                                                    total=len(individuals_to_evaluate_actual),
+                                                    desc=f"Gen {generation} Fitness Eval",
+                                                    leave=False, unit="indiv"))
+            
+            # Update fitness_scores_this_gen and cache
+            for i, score_idx in enumerate(individuals_to_evaluate_indices):
+                fitness_scores_this_gen[score_idx] = calculated_scores[i]
+                fitness_cache[tuple(individuals_to_evaluate_actual[i])] = calculated_scores[i]
+        
+        population_with_fitness = list(zip(population, fitness_scores_this_gen))
 
         population_with_fitness.sort(key=lambda item: item[1], reverse=True)
         
         current_best_fitness_this_gen = population_with_fitness[0][1]
         current_best_individual_this_gen = population_with_fitness[0][0]
         
+        # Calculate average and std dev from the collected fitness_scores_this_gen
         avg_fitness_this_gen = np.mean(fitness_scores_this_gen) if fitness_scores_this_gen else 0
         std_dev_fitness_this_gen = np.std(fitness_scores_this_gen) if fitness_scores_this_gen else 0
 
@@ -294,10 +349,10 @@ def run_ga():
             best_overall_fitness_so_far = current_best_fitness_this_gen
             best_overall_individual_so_far = list(current_best_individual_this_gen)
             generations_since_last_improvement = 0
-            print(f"\nGeneration {generation}: New Overall Best Fitness = {best_overall_fitness_so_far:.2f}")
+            print(f"\nGeneration {generation}: New Overall Best Fitness = {best_overall_fitness_so_far:.2f} (Cache size: {len(fitness_cache)})")
         else:
             generations_since_last_improvement += 1
-            print(f"\nGeneration {generation}: Best Fitness = {current_best_fitness_this_gen:.2f}, Avg Fitness: {avg_fitness_this_gen:.2f}, Overall Best: {best_overall_fitness_so_far:.2f}")
+            print(f"\nGeneration {generation}: Best Fitness = {current_best_fitness_this_gen:.2f}, Avg Fitness: {avg_fitness_this_gen:.2f}, Overall Best: {best_overall_fitness_so_far:.2f} (Cache size: {len(fitness_cache)})")
 
         log_generation_stats(log_filepath, generation, current_best_fitness_this_gen, avg_fitness_this_gen, std_dev_fitness_this_gen, current_best_individual_this_gen)
         update_adaptive_mutation(generations_since_last_improvement)
@@ -315,9 +370,16 @@ def run_ga():
             parent_pool_idx = (parent_pool_idx + 1) % len(selected_parents)
             p2 = selected_parents[parent_pool_idx % len(selected_parents)]
             parent_pool_idx = (parent_pool_idx + 1) % len(selected_parents)
-            if p1 is p2 and len(set(map(tuple, selected_parents))) > 1:
-                temp_idx = (parent_pool_idx + 1) % len(selected_parents)
+            if p1 is p2 and len(set(map(tuple, selected_parents))) > 1: # Ensure p1 and p2 are different if possible
+                # This logic to find a different p2 could be improved for robustness
+                # For simplicity, we'll try the next one, but a shuffle or random pick might be better
+                # if the parent pool has many identical individuals.
+                temp_idx = (parent_pool_idx + random.randint(0, len(selected_parents)-1)) % len(selected_parents)
                 p2 = selected_parents[temp_idx]
+                # Basic check to ensure p1 and p2 are not the same object if possible
+                if p1 is p2 and len(selected_parents) > 1: # If still same and more parents exist
+                    p2 = selected_parents[(parent_pool_idx + 1) % len(selected_parents)] # try next one sequentially
+
 
             child1, child2 = crossover(p1, p2)
             children_created.append(mutate(child1))
@@ -343,8 +405,8 @@ def run_ga():
     else:
         print("No best individual found.")
 
-    if pygame_initialized and 'pygame' in sys.modules:
-        pygame.quit()
+    if pygame_initialized_main and 'pygame' in sys.modules:
+        pygame.quit() # Quit Pygame in the main process
     return best_overall_individual_so_far, best_overall_fitness_so_far
 
 if __name__ == "__main__":
