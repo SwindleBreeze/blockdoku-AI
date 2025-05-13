@@ -73,11 +73,6 @@ The agent evaluates game states using multiple heuristics:
 python genetic_alg.py
 ```
 
-### Advanced Training Options
-```bash
-python AI_suggestion_improved.py --pop-size 150 --generations 300 --parallel --adaptive-params
-```
-
 ### Testing the Agent
 ```bash
 python test_base_weights.py
