@@ -26,7 +26,7 @@ R_CLEARED_LINE_COL_IMMEDIATE = 10.0  # Immediate reward per line or column clear
 R_CLEARED_SQUARE_IMMEDIATE = 10.0    # Immediate reward per 3x3 square cleared
 R_ALMOST_FULL_IMMEDIATE = 3.0        # Immediate reward for creating an "almost full" region
 R_GAME_WON_IMMEDIATE = 0 # Not applicable to Blockdoku typically
-R_GAME_LOST_IMMEDIATE = -50.0        # Penalty if a move directly leads to game over (e.g., no more moves possible)
+R_GAME_LOST_IMMEDIATE = 20.0        # Penalty if a move directly leads to game over (e.g., no more moves possible)
                                      # Note: The GA's main fitness is still game score, these are components of the heuristic.
 
 # --- Genetic Algorithm Parameters ---
@@ -56,30 +56,30 @@ R_GAME_LOST_IMMEDIATE = -50.0        # Penalty if a move directly leads to game 
 # GA_NUM_GAMES_PER_EVALUATION = 3 # Increased for more robust fitness evaluation
 
 # RUN 3
-# GA_POPULATION_SIZE = 150  # Increased further for broader search
-# GA_NUM_GENERATIONS = 300 # Significantly increased for more evolutionary cycles
-# GA_MUTATION_RATE_INITIAL = 0.10 # Slightly lower initial rate, adaptive mutation can increase it
-# GA_MUTATION_RATE_MIN = 0.01 # Lower minimum for fine-tuning in later stages
-# GA_MUTATION_RATE_MAX = 0.30 # Reduced from 0.35 to cap aggressive mutation
-# GA_MUTATION_STRENGTH_INITIAL = 0.25 # Slightly lower initial strength
-# GA_MUTATION_STRENGTH_MIN = 0.02 # Lower minimum strength for finer adjustments
-# GA_MUTATION_STRENGTH_MAX = 0.45 # Reduced from 0.55 to cap aggressive mutation
-# GA_CROSSOVER_RATE = 0.75 # Slightly increased to promote mixing of solutions
-# GA_ELITISM_COUNT = 10 # Increased proportionally to new population size (approx 7%)
-# GA_NUM_GAMES_PER_EVALUATION = 3 # Increased for more robust fitness evaluation
+GA_POPULATION_SIZE = 150  # Increased further for broader search
+GA_NUM_GENERATIONS = 140 # Significantly increased for more evolutionary cycles
+GA_MUTATION_RATE_INITIAL = 0.10 # Slightly lower initial rate, adaptive mutation can increase it
+GA_MUTATION_RATE_MIN = 0.01 # Lower minimum for fine-tuning in later stages
+GA_MUTATION_RATE_MAX = 0.30 # Reduced from 0.35 to cap aggressive mutation
+GA_MUTATION_STRENGTH_INITIAL = 0.25 # Slightly lower initial strength
+GA_MUTATION_STRENGTH_MIN = 0.02 # Lower minimum strength for finer adjustments
+GA_MUTATION_STRENGTH_MAX = 0.45 # Reduced from 0.55 to cap aggressive mutation
+GA_CROSSOVER_RATE = 0.75 # Slightly increased to promote mixing of solutions
+GA_ELITISM_COUNT = 10 # Increased proportionally to new population size (approx 7%)
+GA_NUM_GAMES_PER_EVALUATION = 5 # Increased for more robust fitness evaluation
 
 # RUN 4
-GA_POPULATION_SIZE = 150
-GA_NUM_GENERATIONS = 300 # Or more if you want to see if it recovers
-GA_MUTATION_RATE_INITIAL = 0.10
-GA_MUTATION_RATE_MIN = 0.01
-GA_MUTATION_RATE_MAX = 0.25 # Further reduced from 0.30 to prevent overly strong mutations late-game
-GA_MUTATION_STRENGTH_INITIAL = 0.25
-GA_MUTATION_STRENGTH_MIN = 0.02
-GA_MUTATION_STRENGTH_MAX = 0.40 # Further reduced from 0.45
-GA_CROSSOVER_RATE = 0.75
-GA_ELITISM_COUNT = 10
-GA_NUM_GAMES_PER_EVALUATION = 3
+# GA_POPULATION_SIZE = 150
+# GA_NUM_GENERATIONS = 300 # Or more if you want to see if it recovers
+# GA_MUTATION_RATE_INITIAL = 0.10
+# GA_MUTATION_RATE_MIN = 0.01
+# GA_MUTATION_RATE_MAX = 0.25 # Further reduced from 0.30 to prevent overly strong mutations late-game
+# GA_MUTATION_STRENGTH_INITIAL = 0.25
+# GA_MUTATION_STRENGTH_MIN = 0.02
+# GA_MUTATION_STRENGTH_MAX = 0.40 # Further reduced from 0.45
+# GA_CROSSOVER_RATE = 0.75
+# GA_ELITISM_COUNT = 10
+# GA_NUM_GAMES_PER_EVALUATION = 3
 
 
 # Adaptive Mutation Parameters
@@ -90,19 +90,19 @@ GA_NUM_GAMES_PER_EVALUATION = 3
 # GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
 
 # RUN 3
-# GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 15 # Increased from 10 to allow more time before aggressive increase
-# GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
-# GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
-# GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Slight decrease if improving
-# GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
+GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 15 # Increased from 10 to allow more time before aggressive increase
+GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
+GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.015 # Reduced from 0.02 for a gentler increase
+GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Slight decrease if improving
+GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Slight decrease if improving
 
 
 # RUN 4
-GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 20 # Increased from 15, allow more stability before increasing mutation
-GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.01  # Reduced from 0.015 for a much gentler increase
-GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.01 # Reduced from 0.015 for a much gentler increase
-GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Kept the same, allows reduction if improvements occur
-GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Kept the same
+# GA_ADAPTIVE_MUTATION_STAGNATION_THRESHOLD = 20 # Increased from 15, allow more stability before increasing mutation
+# GA_ADAPTIVE_MUTATION_RATE_INCREMENT = 0.01  # Reduced from 0.015 for a much gentler increase
+# GA_ADAPTIVE_MUTATION_STRENGTH_INCREMENT = 0.01 # Reduced from 0.015 for a much gentler increase
+# GA_ADAPTIVE_MUTATION_RATE_DECREMENT = 0.01 # Kept the same, allows reduction if improvements occur
+# GA_ADAPTIVE_MUTATION_STRENGTH_DECREMENT = 0.01 # Kept the same
 
 
 # Heuristic Definitions for GA Chromosome

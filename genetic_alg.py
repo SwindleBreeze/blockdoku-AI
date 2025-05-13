@@ -95,7 +95,7 @@ def evaluate_potential_move(
     Combines board state heuristics and immediate outcome rewards.
     """
     heuristic_score = 0.0
-
+    
     # 1. Board State Heuristics (evaluated on the grid *after* piece placement, *before* clears)
     agg_height = calculate_aggregate_height(grid_state_after_placement_before_clears)
     num_holes = calculate_num_holes(grid_state_after_placement_before_clears)
@@ -140,20 +140,21 @@ def calculate_fitness(individual_weights: list[float], num_games: int = s_ai.GA_
                     if decoded_p_idx >= len(game_state.current_pieces): continue
                     current_piece = game_state.current_pieces[decoded_p_idx]
 
-                    # Simulate move
-                    sim_grid_post_placement_pre_clear = copy.deepcopy(game_grid)
-                    sim_grid_post_placement_pre_clear.place_piece(current_piece, decoded_r, decoded_c)
-
+                    # print( f"Evaluating action {action_idx}: Piece {decoded_p_idx}, Position ({decoded_r}, {decoded_c})")
+                    # sim_grid_post_placement_pre_clear = copy.deepcopy(game_grid)
+                    cleared_r, cleared_c, cleared_sq,af_count,sim_game_over,sim_grid =game_state.simulate_attempt_placement(current_piece, decoded_r, decoded_c)
+                    
+                    # print( cleared_r, cleared_c, cleared_sq,af_count)
                     # Calculate immediate rewards and clear counts for this potential move
                     move_outcome_details = {}
                     move_outcome_details['block_placed_reward'] = s_ai.R_PLACED_BLOCK_IMMEDIATE
 
-                    piece_cells_on_grid = {(decoded_r + ro, decoded_c + co) for ro, co in current_piece.relative_cells}
-                    af_count, _ = sim_grid_post_placement_pre_clear.get_almost_full_regions_info(piece_cells_on_grid)
+                    # piece_cells_on_grid = {(decoded_r + ro, decoded_c + co) for ro, co in current_piece.relative_cells}
+                    # af_count, _ = sim_game_state.grid.get_almost_full_regions_info(piece_cells_on_grid)
                     move_outcome_details['almost_full_reward'] = af_count * s_ai.R_ALMOST_FULL_IMMEDIATE
-                    
+                    # print(f"Almost full count: {af_count} for piece {current_piece}")
                     # temp_grid_for_clear_counting = copy.deepcopy(sim_grid_post_placement_pre_clear)
-                    cleared_r, cleared_c, cleared_sq = sim_grid_post_placement_pre_clear.count_potential_clears()
+                    # cleared_r, cleared_c, cleared_sq = sim_game_state.grid.clear_lines_and_squares()
                     total_clears = cleared_r + cleared_c + cleared_sq
                     move_outcome_details['clear_reward'] = total_clears * s_ai.R_CLEARED_LINE_COL_IMMEDIATE # Assuming same reward for all clear types for simplicity
 
@@ -165,14 +166,20 @@ def calculate_fitness(individual_weights: list[float], num_games: int = s_ai.GA_
                     # We can add a penalty if the *current* placement leads to game_state.check_if_game_over() becoming true
                     # *before* new pieces are generated.
                     
+                    
                     # For now, the H_IMMEDIATE_GAME_LOST_PENALTY will be triggered if game_state.game_over is true after the actual placement.
                     # So, it's not part of the *prospective* evaluation here, but rather a post-mortem if the game ends.
                     # A better way would be to simulate one step further if this is critical.
                     # Let's assume the main fitness (game score) handles game over avoidance primarily.
                     # The H_IMMEDIATE_GAME_LOST_PENALTY is more for if a specific move is *known* to be terminal.
 
+                    # temp_gs_for_lookahead = copy.deepcopy(game_state)
+                    
+                    if sim_game_over:
+                        move_outcome_details['game_lost_penalty'] = s_ai.R_GAME_LOST_IMMEDIATE
+                    
                     current_move_eval_score = evaluate_potential_move(
-                        sim_grid_post_placement_pre_clear,
+                        sim_grid,
                         individual_weights,
                         move_outcome_details
                     )
@@ -352,7 +359,7 @@ def run_ga():
             print(f"\nGeneration {generation}: New Overall Best Fitness = {best_overall_fitness_so_far:.2f} (Cache size: {len(fitness_cache)})")
         else:
             generations_since_last_improvement += 1
-            print(f"\nGeneration {generation}: Best Fitness = {current_best_fitness_this_gen:.2f}, Avg Fitness: {avg_fitness_this_gen:.2f}, Overall Best: {best_overall_fitness_so_far:.2f} (Cache size: {len(fitness_cache)})")
+        print(f"\nGeneration {generation}: Best Fitness = {current_best_fitness_this_gen:.2f}, Avg Fitness: {avg_fitness_this_gen:.2f}, Overall Best: {best_overall_fitness_so_far:.2f} (Cache size: {len(fitness_cache)})")
 
         log_generation_stats(log_filepath, generation, current_best_fitness_this_gen, avg_fitness_this_gen, std_dev_fitness_this_gen, current_best_individual_this_gen)
         update_adaptive_mutation(generations_since_last_improvement)

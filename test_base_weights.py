@@ -86,25 +86,23 @@ def play_game_with_weights(weights: list[float], render: bool = False, fps: int 
                 if decoded_p_idx >= len(game_state.current_pieces): continue
                 current_piece = game_state.current_pieces[decoded_p_idx]
 
-                sim_grid_post_placement_pre_clear = copy.deepcopy(game_grid)
-                sim_grid_post_placement_pre_clear.place_piece(current_piece, decoded_r, decoded_c)
-                
+                cleared_r, cleared_c, cleared_sq,af_count,sim_game_over,sim_grid =game_state.simulate_attempt_placement(current_piece, decoded_r, decoded_c)
+                    
+                # print( cleared_r, cleared_c, cleared_sq,af_count)
+                # Calculate immediate rewards and clear counts for this potential move
                 move_outcome_details = {}
                 move_outcome_details['block_placed_reward'] = s_ai.R_PLACED_BLOCK_IMMEDIATE
-                piece_cells_on_grid = {(decoded_r + ro, decoded_c + co) for ro, co in current_piece.relative_cells}
-                af_count, _ = sim_grid_post_placement_pre_clear.get_almost_full_regions_info(piece_cells_on_grid)
-                move_outcome_details['almost_full_reward'] = af_count * s_ai.R_ALMOST_FULL_IMMEDIATE
-                temp_grid_for_clear_counting = copy.deepcopy(sim_grid_post_placement_pre_clear)
-                cleared_r, cleared_c, cleared_sq = temp_grid_for_clear_counting.clear_lines_and_squares()
-                total_clears = cleared_r + cleared_c + cleared_sq
-                move_outcome_details['clear_reward'] = total_clears * s_ai.R_CLEARED_LINE_COL_IMMEDIATE
-                
-                # For testing, game_lost_penalty is implicitly handled by low scores if the game ends.
-                # The heuristic is primarily for guiding choices, not for exact reward shaping during test.
-                move_outcome_details['game_lost_penalty'] = 0 # Not actively used in test eval this way
 
+                move_outcome_details['almost_full_reward'] = af_count * s_ai.R_ALMOST_FULL_IMMEDIATE
+  
+                total_clears = cleared_r + cleared_c + cleared_sq
+                move_outcome_details['clear_reward'] = total_clears * s_ai.R_CLEARED_LINE_COL_IMMEDIATE # Assuming same reward for all clear types for simplicity
+
+                if sim_game_over:
+                    move_outcome_details['game_lost_penalty'] = s_ai.R_GAME_LOST_IMMEDIATE
+                
                 current_move_eval_score = evaluate_potential_move(
-                    sim_grid_post_placement_pre_clear,
+                    sim_grid,
                     weights,
                     move_outcome_details
                 )
@@ -165,7 +163,7 @@ def main_test_and_validate(num_test_games=100, visualize_first_n_games=1):
     pygame.init() 
     pygame.font.init()
 
-    best_weights = load_best_weights()
+    best_weights = load_best_weights("/Users/aljazjustin/soal-programi/MAGI/UI/blockdoku-AI/ga_trained_models/best_blockdoku_ga_weights.txt")
     if best_weights is None:
         print("Could not proceed with testing.")
         if pygame.get_init(): pygame.quit()
@@ -203,7 +201,7 @@ def main_test_and_validate(num_test_games=100, visualize_first_n_games=1):
         pygame.quit()
 
 if __name__ == "__main__":
-    num_games_to_test = 100  # How many games to run for statistics
+    num_games_to_test = 200  # How many games to run for statistics
     num_games_to_visualize = 1 # How many of the first games to render
 
     # Example: python test_best_weights.py 50 2  (to test 50 games, visualize first 2)

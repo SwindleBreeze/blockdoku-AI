@@ -5,6 +5,7 @@ import game.settings as s_game # Import game-specific settings
 from game.piece import Piece
 from game.grid import Grid
 from typing import List, Optional, Tuple
+import copy
 
 class GameState:
     def __init__(self, grid: Grid):
@@ -136,3 +137,62 @@ class GameState:
             "score": self.score, # This is the simple game score
             "game_over": self.game_over
         }
+    
+    def simulate_attempt_placement(self, piece: Piece, grid_r: int, grid_c: int) -> Tuple[bool, int, int, int, int, List[str], bool]:
+        """
+        Simulates placing a piece to get clear counts, almost full counts, and if the game would end next.
+        Does NOT modify the actual game state (grid, score, pieces).
+        Returns: Tuple (
+            success_bool,
+            cleared_r,
+            cleared_c,
+            cleared_sq,
+            almost_full_new_count,
+            almost_full_details_debug,
+            would_game_over_next_turn_bool
+        )
+        """
+        cleared_r_count, cleared_c_count, cleared_sq_count = 0, 0, 0
+        almost_full_new_count = 0
+        almost_full_details_debug = []
+        would_game_over_next_turn = False # Default to False
+
+        if self.grid.can_place_piece(piece, grid_r, grid_c):
+            # print("SIMUATION")
+            sim_grid = copy.deepcopy(self.grid)
+
+            piece_cells_on_grid = set()
+            for r_offset, c_offset in piece.relative_cells:
+                piece_cells_on_grid.add((grid_r + r_offset, grid_c + c_offset))
+
+            sim_grid.place_piece(piece, grid_r, grid_c)
+            almost_full_new_count, almost_full_details_debug = sim_grid.get_almost_full_regions_info(piece_cells_on_grid)
+            cleared_r_count, cleared_c_count, cleared_sq_count = sim_grid.clear_lines_and_squares() # Modifies sim_grid
+
+            # Determine if this is the last piece from the current set
+            is_last_current_piece = len(self.current_pieces) == 1 and self.current_pieces[0] is piece
+            # Check if any of the current pieces can be placed anywhere
+            
+
+            can_place_any = False        
+            if not is_last_current_piece:   
+                
+                for piece in self.current_pieces:
+                    for r in range(self.grid.height): # Use grid dimensions from grid object
+                        for c in range(self.grid.width):
+                            if sim_grid.can_place_piece(piece, r, c):
+                                can_place_any = True
+                                break 
+                        if can_place_any:
+                            break 
+                    if can_place_any:
+                        break 
+
+            if not can_place_any:
+                
+                would_game_over_next_turn = True
+
+            return cleared_r_count, cleared_c_count, cleared_sq_count, almost_full_new_count, would_game_over_next_turn,sim_grid
+        else:
+            
+            return 0, 0, 0, 0, False, False # Move not possible, so next turn game over is False by this path
