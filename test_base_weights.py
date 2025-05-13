@@ -163,7 +163,9 @@ def main_test_and_validate(num_test_games=100, visualize_first_n_games=1):
     pygame.init() 
     pygame.font.init()
 
-    best_weights = load_best_weights("/Users/aljazjustin/soal-programi/MAGI/UI/blockdoku-AI/ga_trained_models/best_blockdoku_ga_weights.txt")
+    path_to_best_save = os.path.join(os.getcwd(), "ga_trained_models/best_blockdoku_ga_weights.txt")
+
+    best_weights = load_best_weights(path_to_best_save)
     if best_weights is None:
         print("Could not proceed with testing.")
         if pygame.get_init(): pygame.quit()
