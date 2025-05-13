@@ -22,7 +22,6 @@ This project implements a genetic algorithm to train an agent that plays Blockdo
 ```
 ├── blockdoku_env.py           # Environment wrapper for the game
 ├── genetic_alg.py             # Core genetic algorithm implementation
-├── AI_suggestion_improved.py  # Improved genetic algorithm implementation
 ├── settings.py                # AI and training settings
 ├── utils.py                   # Utility functions
 ├── test_base_weights.py       # Testing script for trained weights
